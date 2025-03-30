@@ -11,7 +11,7 @@ Before using this node, you need to have a WaveSpeed AI API key. You can obtain 
 
 1. Navigate to the `ComfyUI/custom_nodes` directory.
 
-2. Clone this repository: `git clone https://github.com/yourusername/ComfyUI-WaveSpeedAI-API`
+2. Clone this repository: `git clone https://github.com/WaveSpeedAI/wavespeed-comfyui.git`
   
 3. Install the dependencies:
   - Windows (ComfyUI portable): `python -m pip install -r requirements.txt`
