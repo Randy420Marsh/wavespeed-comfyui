@@ -316,6 +316,26 @@ class WaveSpeedAPI:
                 endpoint = "wavespeed-ai/wan-2.1/i2v-480p-lora"
             else:
                 endpoint = "wavespeed-ai/wan-2.1/i2v-480p"
+        elif model == "wan-2.1/i2v-720p-ultra-fast":
+            if size == "" or size == None:
+                size = "1280*720"
+            size_limit.append("1280*720")
+            size_limit.append("720*1280")
+            if len(real_loras) > 0:
+                endpoint = "wavespeed-ai/wan-2.1/i2v-720p-lora-ultra-fast"
+            else:
+                endpoint = "wavespeed-ai/wan-2.1/i2v-720p-ultra-fast"
+                raise ValueError(f"Invalid model: {model}, this model needs LoRA")
+        elif model == "wan-2.1/i2v-480p-ultra-fast":
+            if size == "" or size == None:
+                size = "832*480"
+            size_limit.append("832*480")
+            size_limit.append("480*832")
+            if len(real_loras) > 0:
+                endpoint = "wavespeed-ai/wan-2.1/i2v-480p-lora-ultra-fast"
+                raise ValueError(f"Invalid model: {model}, this model does not support LoRA ")
+            else:
+                endpoint = "wavespeed-ai/wan-2.1/i2v-480p-ultra-fast"
         else:
             raise ValueError(f"Invalid model: {model}")
 
@@ -424,6 +444,26 @@ class WaveSpeedAPI:
                 endpoint = "wavespeed-ai/wan-2.1/t2v-480p-lora"
             else:
                 endpoint = "wavespeed-ai/wan-2.1/t2v-480p"
+        elif model == "wan-2.1/t2v-720p-ultra-fast":
+            if size == "" or size == None:
+                size = "1280*720"
+            size_limit.append("1280*720")
+            size_limit.append("720*1280")
+            if len(real_loras) > 0:
+                endpoint = "wavespeed-ai/wan-2.1/t2v-720p-lora-ultra-fast"
+            else:
+                endpoint = "wavespeed-ai/wan-2.1/t2v-720p-ultra-fast"
+            raise ValueError(f"Invalid model: {model}, this model does not support Ultra-fast mode")
+        elif model == "wan-2.1/t2v-480p-ultra-fast":
+            if size == "" or size == None:
+                size = "832*480"
+            size_limit.append("832*480")
+            size_limit.append("480*832")
+            if len(real_loras) > 0:
+                endpoint = "wavespeed-ai/wan-2.1/t2v-480p-lora-ultra-fast"
+                raise ValueError(f"Invalid model: {model}, this model does not support LoRA ")
+            else:
+                endpoint = "wavespeed-ai/wan-2.1/t2v-480p-ultra-fast"
         else:
             raise ValueError(f"Invalid model: {model}")
 

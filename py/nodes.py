@@ -677,12 +677,12 @@ class WanText2VideoNode:
         return {
             "required": {
                 "client": ("WAVESPEED_AI_API_CLIENT",),
-                "model": (["wan-2.1/t2v-720p", "wan-2.1/t2v-480p"],),
+                "model": (["wan-2.1/t2v-720p", "wan-2.1/t2v-480p","wan-2.1/t2v-720p-ultra-fast", "wan-2.1/t2v-480p-ultra-fast"],),
                 "prompt": ("STRING", {"multiline": True, "default": "", "tooltip": "Text prompt to guide video generation"}),
             },
             "optional": {
                 "negative_prompt": ("STRING", {"multiline": True, "default": "", "tooltip": "Negative prompt to specify what to avoid in the video"}),
-                "size": (["None","720x1280", "1280x720", "480x832", "832x480"], {"tooltip": "Video dimensions in width x height format. 480p: 832x480 or 480x832, 720p: 1280x720 or 720x1280"}),
+                "size": (["None","720*1280", "1280*720", "480*832", "832*480"], {"tooltip": "Video dimensions in width x height format. 480p: 832*480 or 480*832, 720p: 1280*720 or 720*1280"}),
                 "loras": ("WAVESPEED_WAN_LORAS", {"tooltip": "List of LoRA models to apply (maximum 3)"}),
                 "num_inference_steps": ("INT", {
                     "default": 30,
@@ -782,13 +782,13 @@ class WanImage2VideoNode:
         return {
             "required": {
                 "client": ("WAVESPEED_AI_API_CLIENT",),
-                "model": (["wan-2.1/i2v-720p", "wan-2.1/i2v-480p"],),
+                "model": (["wan-2.1/i2v-720p", "wan-2.1/i2v-480p","wan-2.1/i2v-720p-ultra-fast", "wan-2.1/i2v-480p-ultra-fast"],),
                 "image_url": ("STRING", {"multiline": False, "default": "", "tooltip": "Image URL for video generation"}),
                 "prompt": ("STRING", {"multiline": True, "default": "", "tooltip": "Text prompt to guide video generation"}),
             },
             "optional": {
                 "negative_prompt": ("STRING", {"multiline": True, "default": "", "tooltip": "Negative prompt to specify what to avoid in the video"}),
-                "size": (["None","720x1280", "1280x720", "480x832", "832x480"], {"tooltip": "Video dimensions in width x height format. 480p: 832x480 or 480x832, 720p: 1280x720 or 720x1280"}),
+                "size": (["None","720*1280", "1280*720", "480*832", "832*480"], {"tooltip": "Video dimensions in width x height format. 480p: 832*480 or 480*832, 720p: 1280*720 or 720*1280"}),
                 "loras": ("WAVESPEED_WAN_LORAS", {"tooltip": "List of LoRA models to apply (maximum 3)"}),
                 "num_inference_steps": ("INT", {
                     "default": 30,
