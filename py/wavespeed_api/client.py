@@ -173,7 +173,6 @@ class WaveSpeedClient:
             return {"request_id": request_id, "status": "processing"}
 
         task_result = self.wait_for_task(request_id, polling_interval=polling_interval, timeout=timeout)
-        print("task_result", task_result)
         return task_result
 
     def upload_file(self, image: PIL.Image.Image):

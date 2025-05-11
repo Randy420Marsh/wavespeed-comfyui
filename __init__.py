@@ -41,15 +41,6 @@ for file in files:
         all_nodes[file]={"NODE_CLASS_MAPPINGS": serialized_CLASS_MAPPINGS, "NODE_DISPLAY_NAME_MAPPINGS": serialized_DISPLAY_NAME_MAPPINGS}
     except:
         pass
-print("------------------------")
-names_list = []
-for key, value in NODE_DISPLAY_NAME_MAPPINGS.items():
-    names_list.append(value)
-names_list.sort()
-
-for name in names_list:
-    print(f"\"{name}\"")
-print("------------------------")
 
 WEB_DIRECTORY = "./web"
 
