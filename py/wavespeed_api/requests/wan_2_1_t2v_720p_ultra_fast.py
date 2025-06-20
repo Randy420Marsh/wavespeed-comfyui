@@ -11,7 +11,7 @@ class Wan2x1T2v720pUltraFast(BaseRequest):
     prompt: str = Field(..., description="The prompt for generating the output.")
     negative_prompt: Optional[str] = Field("", description="The negative prompt for generating the output.")
     size: Optional[str] = Field("1280*720", description="The size of the output.", enum=["1280*720", "720*1280"])
-    num_inference_steps: Optional[int] = Field(30, ge=0.1, le=40, description="The number of inference steps.")
+    num_inference_steps: Optional[int] = Field(30, ge=1, le=40, description="The number of inference steps.")
     duration: Optional[int] = Field(5, ge=5, le=10, step=5, description="Generate video duration length seconds.")
     guidance_scale: Optional[float] = Field(5.0, ge=1.01, le=10.0, step=0.1, description="The guidance scale for generation.")
     flow_shift: Optional[float] = Field(5.0, ge=1, le=10, step=0.1, description="The shift value for the timestep schedule for flow matching.")

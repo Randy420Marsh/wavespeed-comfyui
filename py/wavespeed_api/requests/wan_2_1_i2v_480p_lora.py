@@ -84,8 +84,8 @@ class Wan2x1I2V480pLora(BaseRequest):
 
     def field_required(self):
         return [
-            "image",  # 从JSON的 request_schema.required 获取
-            "prompt"  # 从JSON的 request_schema.required 获取
+            "image", 
+            "prompt"
         ]
 
     def field_order(self):

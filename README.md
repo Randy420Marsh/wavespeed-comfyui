@@ -28,6 +28,16 @@ The workflow images contain workflow information and can be directly dragged int
 
 ---
 
+#### Hot 
+- We have launched very powerful video nodes called seedance, please enjoy them freely
+- Workflow Example:
+
+  ![Seedance Workflow](custom_nodes/ComfyUI-WaveSpeedAI-API/examples/bytedance_seedance_lite_i2v.png)
+
+- Result Video:
+
+  <video src="examples/bytedance_seedance_lite_i2v-480p.mp4" controls width="480"></video>
+
 #### 1. Dia TTS
 - Workflow Example:
 

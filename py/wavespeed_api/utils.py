@@ -7,12 +7,13 @@ import requests
 import torch
 from collections.abc import Iterable
 from typing import List
+from pydantic import BaseModel, Field
 
 
 def imageurl2tensor(image_urls: List[str]):
     images = []
     if not image_urls:
-        return torch.zeros((1, 3, 1, 1))  # 返回一个1x3x1x1的黑色tensor
+        return torch.zeros((1, 3, 1, 1))
     for url in image_urls:
         image_data = fetch_image(url)
         image = decode_image(image_data)
@@ -102,7 +103,7 @@ def normalization_loras(loras, scale_max, scale_default):
     return _loras
 
 
-class BaseRequest:
+class BaseRequest(BaseModel):
     """Base class for all API request objects."""
 
     def build_payload(self):
