@@ -32,7 +32,7 @@ The workflow images contain workflow information and can be directly dragged int
 - We have launched very powerful video nodes called seedance, please enjoy them freely
 - Workflow Example:
 
-  ![Seedance Workflow](custom_nodes/ComfyUI-WaveSpeedAI-API/examples/bytedance_seedance_lite_i2v.png)
+  ![Seedance Workflow](examples/bytedance_seedance_lite_i2v.png)
 
 - Result Video:
 
