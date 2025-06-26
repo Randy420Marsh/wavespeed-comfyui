@@ -28,32 +28,6 @@ class Wan2x1T2V720pLora(BaseRequest):
     seed: Optional[int] = Field(-1, description="The seed for random number generation.")
     enable_safety_checker: Optional[bool] = Field(True, description="Whether to enable the safety checker.")
 
-    def __init__(
-            self,
-            prompt: str,
-            negative_prompt: Optional[str] = "",
-            loras: Optional[List[Union[LoraWeightItem, Dict[str, Any]]]] = None,  # Allow dicts for easier init
-            size: Optional[str] = "1280*720",
-            num_inference_steps: Optional[int] = 30,
-            duration: Optional[int] = 5,
-            guidance_scale: Optional[float] = 5.0,
-            flow_shift: Optional[float] = 5.0,
-            seed: Optional[int] = -1,
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.negative_prompt = negative_prompt
-        if loras is not None:
-            self.loras = [LoraWeightItem(**lora) if isinstance(lora, dict) else lora for lora in loras]
-        self.size = size
-        self.num_inference_steps = num_inference_steps
-        self.duration = duration
-        self.guidance_scale = guidance_scale
-        self.flow_shift = flow_shift
-        self.seed = seed
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

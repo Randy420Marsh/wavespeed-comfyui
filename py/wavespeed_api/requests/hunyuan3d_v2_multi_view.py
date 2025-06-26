@@ -17,25 +17,6 @@ class Hunyuan3DV2MultiView(BaseRequest):
     octree_resolution: Optional[int] = Field(256, ge=64, le=512, description="Resolution of the octree.")
     textured_mesh: Optional[bool] = Field(False, description="Whether to generate a textured mesh.")
 
-    def __init__(
-            self,
-            back_image_url: str,
-            front_image_url: str,
-            left_image_url: str,
-            guidance_scale: Optional[float] = 7.5,
-            num_inference_steps: Optional[int] = 50,
-            octree_resolution: Optional[int] = 256,
-            textured_mesh: Optional[bool] = False,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.back_image_url = back_image_url
-        self.front_image_url = front_image_url
-        self.left_image_url = left_image_url
-        self.guidance_scale = guidance_scale
-        self.num_inference_steps = num_inference_steps
-        self.octree_resolution = octree_resolution
-        self.textured_mesh = textured_mesh
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

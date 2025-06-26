@@ -20,27 +20,6 @@ class Magi124b(BaseRequest):
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
     aspect_ratio: Optional[str] = Field("auto", description="Aspect ratio of the generated video. If 'auto', the aspect ratio will be determined automatically based on the input image.", enum=["auto", "16:9", "9:16", "1:1"])
 
-    def __init__(
-            self,
-            prompt: str,
-            image: Optional[str] = None,
-            num_frames: Optional[int] = 96,
-            frames_per_second: Optional[int] = 24,
-            seed: Optional[int] = -1,
-            resolution: Optional[str] = "720p",
-            enable_safety_checker: Optional[bool] = True,
-            aspect_ratio: Optional[str] = "auto",
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.num_frames = num_frames
-        self.frames_per_second = frames_per_second
-        self.seed = seed
-        self.resolution = resolution
-        self.enable_safety_checker = enable_safety_checker
-        self.aspect_ratio = aspect_ratio
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

@@ -24,31 +24,6 @@ class InstantCharacter(BaseRequest):
     num_images: Optional[int] = Field(1, ge=1, le=4, description="The number of images to generate.")
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(
-            self,
-            prompt: str,
-            image: str,
-            width: Optional[int] = 1024,
-            height: Optional[int] = 1024,
-            negative_prompt: Optional[str] = None,
-            seed: Optional[int] = -1,
-            guidance_scale: Optional[float] = 3.5,
-            num_inference_steps: Optional[int] = 28,
-            num_images: Optional[int] = 1,
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs: Any):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.width = width
-        self.height = height
-        self.negative_prompt = negative_prompt
-        self.seed = seed
-        self.guidance_scale = guidance_scale
-        self.num_inference_steps = num_inference_steps
-        self.num_images = num_images
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

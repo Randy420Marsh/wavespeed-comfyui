@@ -13,15 +13,6 @@ class Ghibli(BaseRequest):
     image: str = Field(..., description="The image to generate an image from.")
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(
-            self,
-            image: str,
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs: Any):
-        super().__init__(**kwargs)
-        self.image = image
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

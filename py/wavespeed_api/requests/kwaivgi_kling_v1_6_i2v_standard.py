@@ -18,21 +18,6 @@ class KwaivgiKlingV16I2vStandard(BaseRequest):
         description="Text prompt for generation; Positive text prompt; Cannot exceed 2500 characters",
         max_length=2000)
 
-    def __init__(
-            self,
-            image: str,
-            duration: Optional[str] = "5",
-            guidance_scale: Optional[float] = 0.5,
-            negative_prompt: Optional[str] = None,
-            prompt: Optional[str] = None,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.duration = duration
-        self.guidance_scale = guidance_scale
-        self.image = image
-        self.negative_prompt = negative_prompt
-        self.prompt = prompt
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

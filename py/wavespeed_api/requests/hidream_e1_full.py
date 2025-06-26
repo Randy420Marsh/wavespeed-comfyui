@@ -13,13 +13,6 @@ class HidreamE1Full(BaseRequest):
     seed: Optional[int] = Field(default=-1, description="\n            The same seed and the same prompt given to the same version of the model\n            will output the same image every time.\n        ")
     enable_safety_checker: Optional[bool] = Field(default=True, description="If set to true, the safety checker will be enabled.")  # In JSON, this field has "disabled": true
 
-    def __init__(self, prompt: str, image: str, seed: Optional[int] = -1, enable_safety_checker: Optional[bool] = True, **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.seed = seed
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

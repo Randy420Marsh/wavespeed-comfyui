@@ -21,27 +21,6 @@ class FluxReduxDev(BaseRequest):
     width: Optional[int] = Field(default=1024, description="The width of the generated image.", ge=512, le=1536)
     height: Optional[int] = Field(default=1024, description="The height of the generated image.", ge=512, le=1536)
 
-    def __init__(
-            self,
-            image: str,
-            enable_safety_checker: Optional[bool] = True,
-            guidance_scale: Optional[float] = 3.5,
-            num_images: Optional[int] = 1,
-            num_inference_steps: Optional[int] = 28,
-            seed: Optional[int] = -1,
-            width: Optional[int] = 1024,
-            height: Optional[int] = 1024,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.enable_safety_checker = enable_safety_checker
-        self.guidance_scale = guidance_scale
-        self.image = image
-        self.num_images = num_images
-        self.num_inference_steps = num_inference_steps
-        self.seed = seed
-        self.width = width
-        self.height = height
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

@@ -17,27 +17,6 @@ class MmaudioV2(BaseRequest):
     guidance_scale: Optional[float] = Field(4.5, description="The strength of Classifier Free Guidance.", ge=0, le=20)
     mask_away_clip: Optional[bool] = Field(False, description="Whether to mask away the clip.")
 
-    def __init__(
-            self,
-            video: str,
-            prompt: str,
-            negative_prompt: Optional[str] = "",
-            seed: Optional[int] = -1,
-            num_inference_steps: Optional[int] = 25,
-            duration: Optional[int] = 8,
-            guidance_scale: Optional[float] = 4.5,
-            mask_away_clip: Optional[bool] = False,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.video = video
-        self.prompt = prompt
-        self.negative_prompt = negative_prompt
-        self.seed = seed
-        self.num_inference_steps = num_inference_steps
-        self.duration = duration
-        self.guidance_scale = guidance_scale
-        self.mask_away_clip = mask_away_clip
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

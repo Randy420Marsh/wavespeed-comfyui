@@ -24,17 +24,6 @@ class MinimaxVideo01(BaseRequest):
         description="The model automatically optimizes incoming prompts to improve build quality.",
         title="Use prompt optimizer")
 
-    def __init__(
-            self,
-            prompt: str,  # Required, no default
-            image: Optional[str] = None,
-            enable_prompt_expansion: Optional[bool] = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.enable_prompt_expansion = enable_prompt_expansion
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

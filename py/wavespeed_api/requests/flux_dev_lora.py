@@ -24,36 +24,6 @@ class FluxDevLora(BaseRequest):
     height: Optional[int] = Field(default=1024, description="The height of the generated image.", ge=512, le=1536)
     strength: Optional[float] = Field(default=0.8, description="Strength indicates extent to transform the reference image", maximum=1, minimum=0)
 
-    def __init__(
-            self,
-            prompt: str,
-            enable_safety_checker: Optional[bool] = True,
-            guidance_scale: Optional[float] = 3.5,
-            image: Optional[str] = None,
-            loras: Optional[List[Union[LoraWeightItem, Dict[str, Any]]]] = None,  # Allow dicts for easier init
-            mask_image: Optional[str] = None,
-            num_images: Optional[int] = 1,
-            num_inference_steps: Optional[int] = 28,
-            seed: Optional[int] = -1,
-            width: Optional[int] = 1024,
-            height: Optional[int] = 1024,
-            strength: Optional[float] = 0.8,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.enable_safety_checker = enable_safety_checker
-        self.guidance_scale = guidance_scale
-        self.image = image
-        if loras is not None:
-            self.loras = [LoraWeightItem(**lora) if isinstance(lora, dict) else lora for lora in loras]
-        self.mask_image = mask_image
-        self.num_images = num_images
-        self.num_inference_steps = num_inference_steps
-        self.seed = seed
-        self.width = width
-        self.height = height
-        self.strength = strength
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

@@ -15,14 +15,6 @@ class HidreamI1Full(BaseRequest):
     seed: Optional[int] = Field(-1, description="The same seed and the same prompt given to the same version of the model will output the same image every time.")
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(self, prompt: str, width: Optional[int] = 1024, height: Optional[int] = 1024, seed: Optional[int] = -1, enable_safety_checker: Optional[bool] = True, **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.width = width
-        self.height = height
-        self.seed = seed
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

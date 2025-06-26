@@ -39,33 +39,6 @@ class Sdxl(BaseRequest):
     seed: Optional[int] = Field(default=-1, description="Random seed (-1 for random)")
     enable_safety_checker: Optional[bool] = Field(default=True, description="Enable safety checker")
 
-    def __init__(
-            self,
-            prompt: str,
-            image: Optional[str] = "",
-            mask_image: Optional[str] = None,
-            strength: Optional[float] = 0.8,
-            width: Optional[int] = 1024,
-            height: Optional[int] = 1024,
-            num_inference_steps: Optional[int] = 30,
-            guidance_scale: Optional[float] = 5.0,
-            num_images: Optional[int] = 1,
-            seed: Optional[int] = -1,
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs: Any):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.mask_image = mask_image
-        self.strength = strength
-        self.width = width
-        self.height = height
-        self.num_inference_steps = num_inference_steps
-        self.guidance_scale = guidance_scale
-        self.num_images = num_images
-        self.seed = seed
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

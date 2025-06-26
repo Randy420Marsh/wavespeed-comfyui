@@ -29,25 +29,6 @@ class Step1xEdit(BaseRequest):
     enable_safety_checker: Optional[bool] = Field(
         default=True, description="If set to true, the safety checker will be enabled.")  # JSON notes 'disabled: true' for this field, which might mean it's not user-configurable through this schema or always true.
 
-    def __init__(
-            self,
-            prompt: str,
-            image: str,
-            negative_prompt: Optional[str] = "",
-            seed: Optional[int] = -1,  # Matching Field default
-            guidance_scale: Optional[float] = 4.0,
-            num_inference_steps: Optional[int] = 30,
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.negative_prompt = negative_prompt
-        self.seed = seed
-        self.guidance_scale = guidance_scale
-        self.num_inference_steps = num_inference_steps
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

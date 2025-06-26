@@ -13,10 +13,6 @@ class DiaTts(BaseRequest):
         ...,
         description="The text to be converted to speech.")
 
-    def __init__(self, prompt: str, **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

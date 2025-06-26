@@ -20,29 +20,6 @@ class Uno(BaseRequest):
     output_format: Optional[str] = Field("jpeg", description="The format of the generated image.", enum=["jpeg", "png"])
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(
-            self,
-            images: List[str],
-            prompt: str,
-            image_size: Optional[str] = "square_hd",
-            seed: Optional[int] = -1,
-            num_images: Optional[int] = 1,
-            num_inference_steps: Optional[int] = 28,
-            guidance_scale: Optional[float] = 3.5,
-            output_format: Optional[str] = "jpeg",
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.images = images
-        self.prompt = prompt
-        self.image_size = image_size
-        self.seed = seed
-        self.num_images = num_images
-        self.num_inference_steps = num_inference_steps
-        self.guidance_scale = guidance_scale
-        self.output_format = output_format
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

@@ -15,25 +15,6 @@ class SkyReelsV1(BaseRequest):
     prompt: str = Field(..., description="The prompt to generate the video from.")
     seed: Optional[int] = Field(-1, description="Random seed for generation. If not provided, a random seed will be used.")
 
-    def __init__(
-            self,
-            aspect_ratio: Optional[str] = "16:9",
-            guidance_scale: Optional[float] = 6,
-            image: str = "",
-            negative_prompt: Optional[str] = None,
-            num_inference_steps: Optional[int] = 30,
-            prompt: str = "",
-            seed: Optional[int] = -1,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.aspect_ratio = aspect_ratio
-        self.guidance_scale = guidance_scale
-        self.image = image
-        self.negative_prompt = negative_prompt
-        self.num_inference_steps = num_inference_steps
-        self.prompt = prompt
-        self.seed = seed
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

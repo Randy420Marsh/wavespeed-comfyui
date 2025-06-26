@@ -22,31 +22,6 @@ class Framepack(BaseRequest):
     guidance_scale: Optional[float] = Field(10.0, description="Guidance scale for the generation.", ge=0.0, le=32.0)
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(
-            self,
-            image: str,
-            prompt: str,
-            negative_prompt: Optional[str] = "",
-            aspect_ratio: Optional[str] = "16:9",
-            resolution: Optional[str] = "720p",
-            seed: Optional[int] = -1,
-            num_inference_steps: Optional[int] = 25,
-            num_frames: Optional[int] = 180,
-            guidance_scale: Optional[float] = 10.0,
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.image = image
-        self.prompt = prompt
-        self.negative_prompt = negative_prompt
-        self.aspect_ratio = aspect_ratio
-        self.resolution = resolution
-        self.seed = seed
-        self.num_inference_steps = num_inference_steps
-        self.num_frames = num_frames
-        self.guidance_scale = guidance_scale
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

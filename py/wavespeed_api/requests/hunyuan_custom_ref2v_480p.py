@@ -22,27 +22,6 @@ class HunyuanCustomRef2V480p(BaseRequest):
     size: Optional[str] = Field("832*480", description="The size of the output.", enum=["832*480", "480*832"])
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(
-            self,
-            image: str,
-            prompt: Optional[str] = None,
-            negative_prompt: Optional[str] = None,
-            guidance_scale: Optional[float] = 7.5,
-            flow_shift: Optional[float] = 13.0,
-            seed: Optional[int] = -1,
-            size: Optional[str] = "832*480",
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.negative_prompt = negative_prompt
-        self.guidance_scale = guidance_scale
-        self.flow_shift = flow_shift
-        self.seed = seed
-        self.size = size
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

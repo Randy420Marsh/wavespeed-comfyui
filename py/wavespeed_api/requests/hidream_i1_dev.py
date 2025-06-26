@@ -13,14 +13,6 @@ class HidreamI1Dev(BaseRequest):
     width: int = Field(1024, description="The width of the generated image.", ge=512, le=1536)
     height: int = Field(1024, description="The height of the generated image.", ge=512, le=1536)
 
-    def __init__(self, prompt: str, enable_safety_checker: bool = True, seed: int = -1, width: int = 1024, height: int = 1024, **kwargs):
-        super().__init__(**kwargs)
-        self.enable_safety_checker = enable_safety_checker
-        self.prompt = prompt
-        self.seed = seed
-        self.width = width
-        self.height = height
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

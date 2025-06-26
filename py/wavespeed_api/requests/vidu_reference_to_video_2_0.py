@@ -22,15 +22,6 @@ class ViduReferenceToVideo20(BaseRequest):
     movement_amplitude: Optional[str] = Field("auto", description="The movement amplitude of objects in the frame. Defaults to auto, accepted value: auto, small, medium, large.", enum=["auto", "small", "medium", "large"])
     seed: Optional[int] = Field(-1, description="The seed to use for generating the video. Random seed: Defaults to a random seed number; Manually set values will override the default random seed.")
 
-    def __init__(self, images: List[str], prompt: str, aspect_ratio: Optional[str] = "16:9", duration: Optional[int] = 4, movement_amplitude: Optional[str] = "auto", seed: Optional[int] = -1, **kwargs):
-        super().__init__(**kwargs)
-        self.images = images
-        self.prompt = prompt
-        self.aspect_ratio = aspect_ratio
-        self.duration = duration
-        self.movement_amplitude = movement_amplitude
-        self.seed = seed
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

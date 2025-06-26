@@ -13,13 +13,6 @@ class KwaivgiKlingV1x6T2vStandard(BaseRequest):
     guidance_scale: Optional[float] = Field(0.5, description="Flexibility in video generation; The higher the value, the lower the model’s degree of flexibility, and the stronger the relevance to the user’s prompt.", ge=0, le=1)
     duration: Optional[str] = Field("5", description="Video Length, unit: s (seconds)", enum=['5', '10'])
 
-    def __init__(self, prompt: str, negative_prompt: Optional[str] = None, guidance_scale: Optional[float] = 0.5, duration: Optional[str] = '5', **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.negative_prompt = negative_prompt
-        self.guidance_scale = guidance_scale
-        self.duration = duration
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

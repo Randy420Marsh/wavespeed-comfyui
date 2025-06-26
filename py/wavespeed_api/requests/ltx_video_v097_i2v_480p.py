@@ -14,14 +14,6 @@ class LtxVideoV097I2V480p(BaseRequest):
     size: Optional[str] = Field(default="832*480", description="The size of the output.", enum=['832*480', '480*832'])
     seed: Optional[int] = Field(default=-1, description="Random seed for generation")
 
-    def __init__(self, image: str, prompt: str, negative_prompt: Optional[str] = None, size: Optional[str] = "832*480", seed: Optional[int] = -1, **kwargs):
-        super().__init__(**kwargs)
-        self.image = image
-        self.prompt = prompt
-        self.negative_prompt = negative_prompt
-        self.size = size
-        self.seed = seed
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

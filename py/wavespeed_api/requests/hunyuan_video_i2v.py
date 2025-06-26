@@ -19,25 +19,6 @@ class HunyuanVideoI2V(BaseRequest):
     size: Optional[str] = Field("1280*720", description="The size of the output.", enum=["1280*720", "720*1280"])
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(
-            self,
-            image: str,
-            prompt: Optional[str] = None,
-            num_inference_steps: Optional[int] = 30,
-            duration: Optional[int] = 5,
-            seed: Optional[int] = -1,
-            size: Optional[str] = "1280*720",
-            enable_safety_checker: Optional[bool] = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.image = image
-        self.num_inference_steps = num_inference_steps
-        self.duration = duration
-        self.seed = seed
-        self.size = size
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

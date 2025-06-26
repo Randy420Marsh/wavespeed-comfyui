@@ -14,14 +14,6 @@ class HunyuanVideoT2V(BaseRequest):
     num_inference_steps: Optional[int] = Field(30, description="The number of inference steps to run. Lower gets faster results, higher gets better results.", ge=2, le=30)
     enable_safety_checker: Optional[bool] = Field(True, description="If set to true, the safety checker will be enabled.")
 
-    def __init__(self, prompt: str, size: Optional[str] = "1280*720", seed: Optional[int] = -1, num_inference_steps: Optional[int] = 30, enable_safety_checker: Optional[bool] = True, **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.size = size
-        self.seed = seed
-        self.num_inference_steps = num_inference_steps
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

@@ -25,23 +25,6 @@ class KwaivgiKlingV1x6I2VPro(BaseRequest):
         0.5, ge=0.0, le=1.0, description="Flexibility in video generation; The higher the value, the lower the model’s degree of flexibility, and the stronger the relevance to the user’s prompt.")
     duration: Optional[str] = Field("5", description="Video Length, unit: s (seconds). ", enum=["5", "10"])
 
-    def __init__(
-            self,
-            image: str,
-            end_image: Optional[str] = None,
-            prompt: Optional[str] = None,
-            negative_prompt: Optional[str] = None,
-            guidance_scale: Optional[float] = 0.5,
-            duration: Optional[str] = "5",
-            **kwargs: Any):
-        super().__init__(**kwargs)
-        self.image = image
-        self.end_image = end_image
-        self.prompt = prompt
-        self.negative_prompt = negative_prompt
-        self.guidance_scale = guidance_scale
-        self.duration = duration
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

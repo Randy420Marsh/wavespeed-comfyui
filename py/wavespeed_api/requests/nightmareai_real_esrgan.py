@@ -10,13 +10,7 @@ class NightmareaiRealEsrgan(BaseRequest):
     image: str = Field(..., description="Input image", format="uri")
     guidance_scale: Optional[float] = Field(4, description="Factor to scale image by", ge=0, le=10)
     face_enhance: Optional[bool] = Field(False, description="Run GFPGAN face enhancement along with upscaling")
-
-    def __init__(self, image: str, guidance_scale: Optional[float] = 4, face_enhance: Optional[bool] = False, **kwargs):
-        super().__init__(**kwargs)
-        self.image = image
-        self.guidance_scale = guidance_scale
-        self.face_enhance = face_enhance
-
+ 
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

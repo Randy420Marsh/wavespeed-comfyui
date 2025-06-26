@@ -20,29 +20,6 @@ class FluxProRedux(BaseRequest):
     num_images: int = Field(default=1, description="The number of images to generate.", title="Num Images")
     enable_safety_checker: bool = Field(default=True, description="If set to true, the safety checker will be enabled.", title="Enable Safety Checker")
 
-    def __init__(
-            self,
-            image: str,
-            prompt: str = "",
-            width: int = 1024,
-            height: int = 1024,
-            seed: int = 0,
-            num_inference_steps: int = 28,
-            guidance_scale: float = 3.5,
-            num_images: int = 1,
-            enable_safety_checker: bool = True,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.image = image
-        self.prompt = prompt
-        self.width = width
-        self.height = height
-        self.seed = seed
-        self.num_inference_steps = num_inference_steps
-        self.guidance_scale = guidance_scale
-        self.num_images = num_images
-        self.enable_safety_checker = enable_safety_checker
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {

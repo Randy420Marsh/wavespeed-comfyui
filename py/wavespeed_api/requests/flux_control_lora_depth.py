@@ -32,34 +32,6 @@ class FluxControlLoraDepth(BaseRequest):
     width: Optional[int] = Field(864, description="The width of the generated image.", ge=512, le=1536)
     height: Optional[int] = Field(1536, description="The height of the generated image.", ge=512, le=1536)
 
-    def __init__(
-            self,
-            prompt: str,
-            control_image: Optional[str] = None,
-            control_scale: Optional[float] = 1,
-            enable_safety_checker: Optional[bool] = True,
-            guidance_scale: Optional[float] = 3.5,
-            loras: Optional[List[Union[LoraWeightItem, Dict[str, Any]]]] = None,  # Allow dicts for easier init
-            num_images: Optional[int] = 1,
-            num_inference_steps: Optional[int] = 28,
-            seed: Optional[int] = -1,
-            width: Optional[int] = 864,
-            height: Optional[int] = 1536,
-            **kwargs):
-        super().__init__(**kwargs)
-        self.prompt = prompt
-        self.control_image = control_image
-        self.control_scale = control_scale
-        self.enable_safety_checker = enable_safety_checker
-        self.guidance_scale = guidance_scale
-        if loras is not None:
-            self.loras = [LoraWeightItem(**lora) if isinstance(lora, dict) else lora for lora in loras]
-        self.num_images = num_images
-        self.num_inference_steps = num_inference_steps
-        self.seed = seed
-        self.width = width
-        self.height = height
-
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
         payload = {
