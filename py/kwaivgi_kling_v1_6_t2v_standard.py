@@ -22,12 +22,12 @@ class KwaivgiKlingV16T2VStandardNode:
                     "tooltip": "Generate video duration length seconds."
                 }),
                 "guidance_scale": ("FLOAT", {
-                    "default": 3.5,
+                    "default": 0.5,
                     "min": 0.0,
-                    "max": 10.0,
-                    "step": 0.1,
+                    "max": 1,
+                    "step": 0.01,
                     "display": "number",
-                    "tooltip": "Guidance scale for generation (0.0 to 10.0)"
+                    "tooltip": "Guidance scale for generation (0.1 to 1.0)"
                 }),
             },
             "optional": {

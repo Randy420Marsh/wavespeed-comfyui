@@ -8,7 +8,7 @@ class KwaivgiKlingV16I2vStandard(BaseRequest):
     """
     Generate 5s videos in 720p resolution from image
     """
-    duration: Optional[str] = Field("5", description="Video Length, unit: s (seconds)", enum=['5', '10'])
+    duration: Optional[int] = Field(default=5, description="Video Length, unit: s (seconds). ", ge=5, le=10)
     guidance_scale: Optional[float] = Field(
         0.5, description="Flexibility in video generation; The higher the value, the lower the model’s degree of flexibility, and the stronger the relevance to the user’s prompt.", ge=0, le=1, step=0.01)
     image: str = Field(..., description="First frame of the video; Supported image formats include.jpg/.jpeg/.png; The image file size cannot exceed 10MB, and the image resolution should not be less than 300*300px")

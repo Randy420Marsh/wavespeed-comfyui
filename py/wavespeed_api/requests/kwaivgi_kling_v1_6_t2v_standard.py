@@ -11,7 +11,7 @@ class KwaivgiKlingV1x6T2vStandard(BaseRequest):
     prompt: str = Field(..., description="Text prompt for generation; Positive text prompt; Cannot exceed 2500 characters", max_length=2000)
     negative_prompt: Optional[str] = Field(None, description="Negative text prompt; Cannot exceed 2500 characters", max_length=2500)
     guidance_scale: Optional[float] = Field(0.5, description="Flexibility in video generation; The higher the value, the lower the model’s degree of flexibility, and the stronger the relevance to the user’s prompt.", ge=0, le=1)
-    duration: Optional[str] = Field("5", description="Video Length, unit: s (seconds)", enum=['5', '10'])
+    duration: Optional[int] = Field(default=5, description="Video Length, unit: s (seconds). ", ge=5, le=10)
 
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""

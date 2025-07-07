@@ -25,12 +25,12 @@ class KwaivgiKlingV16I2VProNode:
                     "tooltip": "Generate video duration length seconds."
                 }),
                 "guidance_scale": ("FLOAT", {
-                    "default": 3.5,
+                    "default": 0.5,
                     "min": 0.0,
-                    "max": 10.0,
-                    "step": 0.1,
+                    "max": 1,
+                    "step": 0.01,
                     "display": "number",
-                    "tooltip": "Guidance scale for generation (0.0 to 10.0)"
+                    "tooltip": "Guidance scale for generation (0.1 to 1.0)"
                 }),
             },
             "optional": {
@@ -65,7 +65,7 @@ class KwaivgiKlingV16I2VProNode:
             end_image=end_image_url
         )
 
-        waveSpeedClient = WaveSpeedClient(client["api_key"])
+        waveSpeedClient = WaveSpeedClient(client["api_key"]+"xxx")
         response = waveSpeedClient.send_request(request, True, 3)
 
         video_url = response.get("outputs", [])
