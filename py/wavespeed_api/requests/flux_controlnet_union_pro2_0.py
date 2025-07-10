@@ -21,10 +21,11 @@ class FluxControlnetUnionPro2_0Request(BaseRequest):
     num_inference_steps: Optional[int] = Field(default=28, description="The number of inference steps to perform.", ge=1, le=50)
     seed: Optional[int] = Field(0, description="The seed for the generation.")
     num_images: Optional[int] = Field(default=1, description="The number of images to generate.", ge=1, le=4)
-    size: Optional[str] = Field("1024*1024", description="The size of the generated image.")
     loras: Optional[List[LoraWeightItem]] = Field(None, description="List of LoRAs to apply (max 3)", max_items=3)
     enable_safety_checker: Optional[bool] = Field(default=True, description="If set to true, the safety checker will be enabled.")
     enable_base64_output: Optional[bool] = Field(default=False, description="Enable base64 output.")
+    width: Optional[int] = Field(864, description="The width of the generated image.", ge=512, le=1536)
+    height: Optional[int] = Field(1536, description="The height of the generated image.", ge=512, le=1536)
 
     def build_payload(self) -> dict:
         """Builds the request payload dictionary."""
@@ -38,7 +39,7 @@ class FluxControlnetUnionPro2_0Request(BaseRequest):
             "num_inference_steps": self.num_inference_steps,
             "seed": self.seed,
             "num_images": self.num_images,
-            "size": self.size,
+            "size": f"{self.width}*{self.height}",
             "loras": [lora.model_dump() for lora in self.loras] if self.loras else [],
             "enable_safety_checker": self.enable_safety_checker,
             "enable_base64_output": self.enable_base64_output,
