@@ -52,7 +52,7 @@ class FluxDevFill(BaseRequest):
 
     def get_api_path(self):
         """Gets the API path. Corresponds to api_path in the JSON."""
-        return "/api/v2/wavespeed-ai/flux-dev-fill"
+        return "/api/v3/wavespeed-ai/flux-fill-dev"
 
     def field_required(self):
         return ['image']
