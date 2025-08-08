@@ -51,9 +51,20 @@ export function addVideoPreview(nodeType, options = {}) {
         return new Promise((cb) => {
             const videoEl = document.createElement('video');
             videoEl.addEventListener('loadedmetadata', () => {
-                videoEl.controls = false;
+                // Show native controls so user can unmute if desired
+                videoEl.controls = true;
                 videoEl.loop = true;
+                // Start muted to satisfy autoplay policies; allow user to unmute via click/controls
                 videoEl.muted = true;
+                // iOS/Safari inline playback with sound after gesture
+                videoEl.playsInline = true;
+                // Click to unmute and continue playback with audio
+                videoEl.addEventListener('click', () => {
+                    if (videoEl.muted) {
+                        videoEl.muted = false;
+                        videoEl.play();
+                    }
+                });
                 resizeVideoAspectRatio(videoEl, BASE_SIZE, BASE_SIZE);
                 cb(videoEl);
             });
@@ -124,9 +135,14 @@ export function addVideoPreview(nodeType, options = {}) {
 
                 this.imgs.forEach((img) => {
                     if (img instanceof HTMLVideoElement) {
+                        // Keep initial autoplay muted; user can unmute via controls or click
                         img.muted = true;
                         img.autoplay = true;
-                        img.play();
+                        // Best-effort autoplay; ignore promise rejection from blocked autoplay with sound
+                        const playPromise = img.play();
+                        if (playPromise && typeof playPromise.catch === 'function') {
+                            playPromise.catch(() => {});
+                        }
                     }
                 });
 
