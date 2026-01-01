@@ -1,0 +1,284 @@
+/**
+ * WaveSpeed Predictor - Input slot management module
+ */
+
+import { getMediaType, getOriginalApiType } from './parameters.js';
+import { createMediaWidgetUI } from './widgets.js';
+
+// Get ComfyUI input type
+function getComfyInputType(param) {
+    const typeMap = {
+        'STRING': 'STRING',
+        'INT': 'INT',
+        'FLOAT': 'FLOAT',
+        'BOOLEAN': 'BOOLEAN',
+        'LORA_WEIGHT': 'WAVESPEED_LORAS',
+    };
+
+    if (param.isArray) {
+        return '*';
+    }
+
+    return typeMap[param.type] || '*';
+}
+
+// Update dynamic inputs
+export function updateDynamicInputs(node, parameters) {
+    if (!parameters || parameters.length === 0) {
+        return;
+    }
+
+    // Remove all existing dynamic inputs (keep Client and array members)
+    for (let i = node.inputs.length - 1; i >= 0; i--) {
+        const input = node.inputs[i];
+        if (input.name !== 'Client' && !input._wavespeed_array_member) {
+            node.removeInput(i);
+        }
+    }
+
+    // Create connectable input for each parameter
+    for (let i = 0; i < parameters.length; i++) {
+        const param = parameters[i];
+        let inputType = getComfyInputType(param);
+        
+        const input = node.addInput(param.name, inputType);
+        if (input) {
+            input._wavespeed_dynamic = true;
+            input._wavespeed_param = param.name;
+        }
+    }
+
+    clearLiteGraphCaches(node);
+    forceNodeRefresh(node);
+}
+
+// Setup single media parameters
+export function setupSingleMediaParameters(node, mediaParams) {
+    console.log('[WaveSpeed DEBUG] Setting up single media parameters:', mediaParams);
+
+    for (const param of mediaParams) {
+        try {
+            const paramName = param.name;
+            const mediaType = getMediaType(paramName, getOriginalApiType(param));
+            const displayName = param.displayName || paramName;
+
+            console.log('[WaveSpeed DEBUG] Creating media param:', paramName, 'type:', mediaType);
+
+            // 1. Create input slot
+            const input = node.addInput(paramName, '*');
+            if (input) {
+                input._wavespeed_dynamic = true;
+                input._wavespeed_param = paramName;
+                input.label = displayName;
+            }
+
+            // 2. Use common UI creation function
+            const { widget, textarea } = createMediaWidgetUI(node, param, mediaType, displayName, paramName);
+
+            // 3. Link input and widget
+            if (input) {
+                input.widget = widget;
+                widget.linkedInput = input;
+            }
+
+            // 4. Confirm link
+            const inputIndex = node.inputs?.findIndex(inp => inp.name === paramName);
+            if (inputIndex !== -1 && inputIndex !== undefined) {
+                const inputSlot = node.inputs[inputIndex];
+                inputSlot.widget = widget;
+                console.log('[WaveSpeed DEBUG] Second link confirmed for:', paramName, 'at index:', inputIndex);
+            }
+
+            // 5. Update editability
+            requestAnimationFrame(() => {
+                updateSingleMediaWidgetEditability(node, paramName);
+            });
+
+            // 6. Force node resize
+            node.setSize(node.computeSize());
+            if (node.graph) {
+                node.graph.setDirtyCanvas(true, true);
+            }
+
+            console.log('[WaveSpeed DEBUG] Successfully created single media parameter:', paramName);
+        } catch (error) {
+            console.error('[WaveSpeed DEBUG] Error creating media parameter:', param.name, error);
+        }
+    }
+}
+
+// Update single media widget editability
+export function updateSingleMediaWidgetEditability(node, paramName) {
+    const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
+    if (!widget) return;
+
+    const inputSlot = node.inputs?.find(inp => inp.name === paramName);
+    const hasConnection = inputSlot && inputSlot.link != null;
+
+    if (hasConnection) {
+        // Has connection: disable editing
+        if (widget.inputEl) {
+            widget.inputEl.disabled = true;
+            widget.inputEl.style.opacity = '0.5';
+            widget.inputEl.style.cursor = 'not-allowed';
+            widget.inputEl.placeholder = '[Connected]';
+        }
+        
+        if (widget.uploadBtn) {
+            widget.uploadBtn.disabled = true;
+            widget.uploadBtn.style.opacity = '0.5';
+            widget.uploadBtn.style.cursor = 'not-allowed';
+        }
+        
+        if (widget.previewContainer) {
+            const previews = widget.previewContainer.querySelectorAll('div');
+            previews.forEach(preview => {
+                if (preview.deleteBtn) {
+                    preview.deleteBtn.style.display = 'none';
+                }
+                if (preview.onClickHandler) {
+                    preview.onclick = null;
+                }
+                preview.style.cursor = 'default';
+            });
+        }
+    } else {
+        // No connection: enable editing
+        if (widget.inputEl) {
+            widget.inputEl.disabled = false;
+            widget.inputEl.style.opacity = '1';
+            widget.inputEl.style.cursor = 'text';
+            widget.inputEl.placeholder = widget.inputEl.getAttribute('data-original-placeholder') || `Enter ${paramName.toLowerCase()}...`;
+        }
+        
+        if (widget.uploadBtn) {
+            widget.uploadBtn.disabled = false;
+            widget.uploadBtn.style.opacity = '1';
+            widget.uploadBtn.style.cursor = 'pointer';
+        }
+        
+        if (widget.previewContainer) {
+            const previews = widget.previewContainer.querySelectorAll('div');
+            previews.forEach(preview => {
+                if (preview.deleteBtn) {
+                    preview.deleteBtn.style.display = '';
+                }
+                if (preview.onClickHandler) {
+                    preview.onclick = preview.onClickHandler;
+                }
+                preview.style.cursor = 'pointer';
+            });
+        }
+    }
+}
+
+// Check if there are dynamic connections
+export function hasDynamicConnections(node) {
+    if (!node.inputs) return false;
+
+    for (let i = 0; i < node.inputs.length; i++) {
+        const input = node.inputs[i];
+        if (input.name !== 'Client' && input.link != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Get list of connected input names
+export function getConnectedInputNames(node) {
+    if (!node.inputs) return [];
+
+    const connected = [];
+    for (let i = 0; i < node.inputs.length; i++) {
+        const input = node.inputs[i];
+        if (input.name !== 'Client' && input.link != null) {
+            connected.push(input.name);
+        }
+    }
+    return connected;
+}
+
+// Disconnect all dynamic input connections
+export function disconnectAllDynamicInputs(node) {
+    if (!node.inputs) return 0;
+
+    let disconnectedCount = 0;
+    const disconnectedNames = [];
+
+    node._skipConnectionUpdates = true;
+
+    for (let i = node.inputs.length - 1; i >= 0; i--) {
+        const input = node.inputs[i];
+        if (input.name !== 'Client' && input.link != null) {
+            disconnectedNames.push(input.name);
+            node.disconnectInput(i);
+            disconnectedCount++;
+        }
+    }
+
+    node._skipConnectionUpdates = false;
+
+    if (disconnectedCount > 0) {
+        console.log(`[WaveSpeed] Auto-disconnected ${disconnectedCount} inputs for model switch:`, disconnectedNames.join(', '));
+    }
+
+    return disconnectedCount;
+}
+
+// Clear LiteGraph internal caches
+export function clearLiteGraphCaches(node) {
+    if (node._slot_positions_cache) {
+        delete node._slot_positions_cache;
+    }
+    if (node._input_positions) {
+        delete node._input_positions;
+    }
+    if (node._output_positions) {
+        delete node._output_positions;
+    }
+    if (node._cached_size) {
+        delete node._cached_size;
+    }
+
+    if (node.graph) {
+        if (node.graph._nodes_order) {
+            delete node.graph._nodes_order;
+        }
+    }
+}
+
+// Force complete node refresh
+export function forceNodeRefresh(node) {
+    if (node.computeSize) {
+        const newSize = node.computeSize();
+        node.setSize(newSize);
+    }
+
+    if (node.setDirtyCanvas) {
+        node.setDirtyCanvas(true, true);
+    }
+
+    if (node.graph) {
+        node.graph.setDirtyCanvas(true, true);
+
+        if (node.graph.canvas) {
+            node.graph.canvas.draw(true, true);
+        }
+    }
+
+    requestAnimationFrame(() => {
+        clearLiteGraphCaches(node);
+
+        if (node.computeSize) {
+            node.setSize(node.computeSize());
+        }
+
+        if (node.graph) {
+            node.graph.setDirtyCanvas(true, true);
+            if (node.graph.canvas) {
+                node.graph.canvas.draw(true, true);
+            }
+        }
+    });
+}

@@ -1,0 +1,1008 @@
+"""
+WaveSpeed AI Predictor Node - All-in-One Node
+
+Combines Task Create and Task Submit functionality into a single node.
+Users can:
+1. Select a model
+2. Configure parameters (dynamically generated)
+3. Execute the generation task
+
+All in one place!
+"""
+
+import json
+import io
+import base64
+import requests
+import torch
+import numpy as np
+from PIL import Image
+from comfy.comfy_types.node_typing import IO as IO_TYPE
+from .wavespeed_api.client import WaveSpeedClient
+from .wavespeed_api.utils import imageurl2tensor
+from .wavespeed_config import get_api_key_from_config
+
+
+def detect_tensor_type(tensor_data):
+    """
+    Detect the type of tensor data (image, video, or audio)
+    
+    Args:
+        tensor_data: Torch tensor or numpy array
+        
+    Returns:
+        str: 'image', 'video', or 'audio'
+    """
+    # Convert to numpy if needed for shape analysis
+    if torch.is_tensor(tensor_data):
+        shape = tensor_data.shape
+    else:
+        shape = tensor_data.shape
+    
+    ndim = len(shape)
+    
+    # Image tensor patterns:
+    # - [B, H, W, C] - batch of images (ComfyUI format)
+    # - [H, W, C] - single image
+    # - [H, W] - grayscale image
+    # - [B, C, H, W] - PyTorch format batch
+    # - [C, H, W] - PyTorch format single
+    
+    # Video tensor patterns:
+    # - [B, F, H, W, C] - batch of videos
+    # - [F, H, W, C] - single video (frames)
+    # - [B, F, C, H, W] - PyTorch format batch
+    # - [F, C, H, W] - PyTorch format single
+    
+    # Audio tensor patterns:
+    # - [B, C, T] - batch of audio (channels, time)
+    # - [C, T] - single audio
+    # - [T] - mono audio
+    # - [B, T] - batch of mono audio
+    
+    if ndim == 2:
+        # Could be grayscale image [H, W] or mono audio [C, T] or [B, T]
+        # If one dimension is much larger than the other, likely audio
+        if shape[0] < 10 and shape[1] > 1000:
+            return 'audio'  # [C, T] where C is small (1-2 channels)
+        elif shape[1] < 10 and shape[0] > 1000:
+            return 'audio'  # [T, C] transposed
+        else:
+            return 'image'  # Grayscale image [H, W]
+    
+    elif ndim == 3:
+        # Could be:
+        # - Image [H, W, C] or [C, H, W] or [B, H, W]
+        # - Audio [B, C, T] or [C, T, ?]
+        
+        # Check for typical image channel counts (1, 3, 4)
+        if shape[-1] in [1, 3, 4] and shape[0] > 10 and shape[1] > 10:
+            return 'image'  # [H, W, C]
+        elif shape[0] in [1, 3, 4] and shape[1] > 10 and shape[2] > 10:
+            return 'image'  # [C, H, W]
+        elif shape[0] < 10 and shape[2] > 1000:
+            return 'audio'  # [B, C, T] or similar
+        else:
+            return 'image'  # Default to image for 3D
+    
+    elif ndim == 4:
+        # Could be:
+        # - Image batch [B, H, W, C] or [B, C, H, W]
+        # - Video [F, H, W, C] or [F, C, H, W]
+        
+        # Check if first dimension looks like frame count (video) or batch (image)
+        # Videos typically have more frames than image batches
+        if shape[0] > 10:
+            # Likely video frames
+            return 'video'
+        else:
+            # Likely image batch
+            return 'image'
+    
+    elif ndim == 5:
+        # Most likely video batch [B, F, H, W, C] or [B, F, C, H, W]
+        return 'video'
+    
+    elif ndim == 1:
+        # Mono audio [T]
+        return 'audio'
+    
+    else:
+        # Default to image for unknown shapes
+        return 'image'
+
+
+def upload_tensor_to_wavespeed(tensor_data):
+    """
+    Upload a tensor (image/video/audio) to WaveSpeed server and return URL
+    Uses direct HTTP request to local ComfyUI endpoint
+
+    Args:
+        tensor_data: Torch tensor or numpy array
+
+    Returns:
+        str: Uploaded file URL
+    """
+    import requests
+    try:
+        # Detect tensor type
+        tensor_type = detect_tensor_type(tensor_data)
+        print(f"[WaveSpeed] Detected tensor type: {tensor_type}")
+
+        # Convert to numpy if needed
+        if torch.is_tensor(tensor_data):
+            data_array = tensor_data.cpu().numpy()
+        else:
+            data_array = tensor_data
+
+        buffer = io.BytesIO()
+        filename = 'tensor_upload'
+        content_type = 'application/octet-stream'
+
+        if tensor_type == 'image':
+            # Handle image tensor
+            # ComfyUI image tensors are in format [B, H, W, C] with values in [0, 1]
+            if len(data_array.shape) == 4:
+                # Batch of images, take first image
+                img_array = data_array[0]
+            else:
+                img_array = data_array
+
+            # Ensure 3D array [H, W, C]
+            if len(img_array.shape) == 2:
+                # Grayscale [H, W] -> [H, W, 1]
+                img_array = np.expand_dims(img_array, axis=-1)
+
+            # Convert from [0, 1] to [0, 255]
+            if img_array.max() <= 1.0:
+                img_array = (img_array * 255).astype(np.uint8)
+            else:
+                img_array = img_array.astype(np.uint8)
+
+            # Convert to PIL Image
+            img = Image.fromarray(img_array)
+            img.save(buffer, format='PNG')
+            filename = 'tensor_upload.png'
+            content_type = 'image/png'
+
+        elif tensor_type == 'video':
+            # Handle video tensor
+            # Video tensor format: [B, F, H, W, C] or [F, H, W, C]
+            try:
+                import cv2
+
+                if len(data_array.shape) == 5:
+                    # [B, F, H, W, C] - take first batch
+                    frames = data_array[0]
+                else:
+                    # [F, H, W, C]
+                    frames = data_array
+
+                # Convert from [0, 1] to [0, 255]
+                if frames.max() <= 1.0:
+                    frames = (frames * 255).astype(np.uint8)
+                else:
+                    frames = frames.astype(np.uint8)
+
+                # Create temporary video file
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
+                    temp_path = temp_video.name
+
+                # Get video properties
+                height, width = frames.shape[1:3]
+                fps = 30  # default FPS
+
+                # Create video writer
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(temp_path, fourcc, fps, (width, height))
+
+                # Write frames
+                for frame in frames:
+                    # Convert RGB to BGR for OpenCV
+                    if frame.shape[-1] == 3:
+                        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    else:
+                        frame_bgr = frame
+                    out.write(frame_bgr)
+
+                out.release()
+
+                # Read video file to buffer
+                with open(temp_path, 'rb') as f:
+                    buffer.write(f.read())
+
+                # Clean up temp file
+                import os
+                os.unlink(temp_path)
+
+                filename = 'tensor_upload.mp4'
+                content_type = 'video/mp4'
+
+            except ImportError:
+                print("[WaveSpeed] OpenCV not available, treating video as image sequence")
+                # Fallback: save first frame as image
+                frame = frames[0] if len(frames) > 0 else frames
+                if frame.max() <= 1.0:
+                    frame = (frame * 255).astype(np.uint8)
+                else:
+                    frame = frame.astype(np.uint8)
+                img = Image.fromarray(frame)
+                img.save(buffer, format='PNG')
+                filename = 'tensor_upload.png'
+                content_type = 'image/png'
+
+        elif tensor_type == 'audio':
+            # Handle audio tensor
+            # Audio tensor format: [B, C, T] or [C, T] or [T]
+            try:
+                import scipy.io.wavfile as wavfile
+
+                if len(data_array.shape) == 3:
+                    # [B, C, T] - take first batch
+                    audio_data = data_array[0]
+                elif len(data_array.shape) == 2:
+                    # [C, T]
+                    audio_data = data_array
+                else:
+                    # [T]
+                    audio_data = data_array
+
+                # Convert to mono if stereo/multi-channel
+                if len(audio_data.shape) == 2:
+                    # Average channels
+                    audio_data = np.mean(audio_data, axis=0)
+
+                # Normalize audio to [-1, 1] if needed
+                if audio_data.max() <= 1.0 and audio_data.min() >= -1.0:
+                    # Already normalized
+                    pass
+                else:
+                    # Normalize
+                    audio_data = audio_data / np.max(np.abs(audio_data))
+
+                # Convert to 16-bit PCM
+                audio_data = (audio_data * 32767).astype(np.int16)
+
+                # Write to WAV file
+                sample_rate = 44100  # default sample rate
+                wavfile.write(buffer, sample_rate, audio_data)
+
+                filename = 'tensor_uploGad.wav'
+                content_type = 'audio/wav'
+
+            except ImportError:
+                print("[WaveSpeed] scipy not available for audio processing")
+                raise ValueError("Audio tensor detected but scipy not available")
+
+        buffer.seek(0)
+        file_bytes = buffer.read()
+
+        # Get API key
+        from .wavespeed_config import get_api_key_from_config
+        api_key = get_api_key_from_config()
+        if not api_key:
+            raise ValueError("No API key configured. Please configure your WaveSpeed API key.")
+
+        # Upload directly to WaveSpeed API (same as backend endpoint)
+        upload_url = "https://api.wavespeed.ai/api/v3/media/upload/binary"
+
+        # Create multipart form data
+        files = {
+            'file': (filename, file_bytes, content_type)
+        }
+        headers = {
+            'Authorization': f'Bearer {api_key}'
+        }
+
+        print(f"[WaveSpeed] Uploading {filename} ({len(file_bytes)} bytes) to {upload_url}")
+
+        response = requests.post(upload_url, files=files, headers=headers, timeout=180)
+        if response.status_code == 200:
+            result = response.json()
+            # WaveSpeed API returns URL directly or in response structure
+            if isinstance(result, str):
+                # Direct URL string
+                uploaded_url = result
+            elif isinstance(result, dict):
+                # Try different response formats
+                uploaded_url = (result.get('download_url') or
+                              result.get('url') or
+                              (result.get('data', {}).get('download_url') if isinstance(result.get('data'), dict) else None) or
+                              (result.get('data', {}).get('url') if isinstance(result.get('data'), dict) else None))
+            else:
+                uploaded_url = None
+
+            if uploaded_url:
+                print(f"[WaveSpeed] Successfully uploaded {tensor_type} tensor: {uploaded_url}")
+                return uploaded_url
+            else:
+                raise ValueError(f"Upload API returned no URL: {result}")
+        else:
+            raise ValueError(f"Upload failed with status {response.status_code}: {response.text}")
+
+    except Exception as e:
+        print(f"[WaveSpeed] Failed to upload tensor: {e}")
+        raise
+
+
+def is_tensor_or_image(value):
+    """Check if value is a tensor or numpy array (image data)"""
+    return torch.is_tensor(value) or isinstance(value, np.ndarray)
+
+
+# AnyType class for universal input/output compatibility
+class AnyType(str):
+    """
+    Universal type that can connect to any input/output.
+    Returns False for all inequality checks, making it compatible with any type.
+    """
+    def __ne__(self, __value: object) -> bool:
+        return False
+
+
+# Create anytype instance
+any_typ = AnyType("*")
+
+
+# ContainsAnyDict class for dynamic inputs
+class ContainsAnyDict(dict):
+    """
+    Special dictionary that accepts any key.
+    Used for optional inputs to allow dynamically created inputs from JavaScript.
+
+    Implements both __contains__ (for 'in' checks) and __getitem__ (for dict[key] access)
+    to handle ComfyUI's dynamic input system.
+    """
+    def __contains__(self, key):
+        return True
+
+    def __getitem__(self, key):
+        # Return a default input specification for any key
+        # This allows ComfyUI to accept any parameter name dynamically
+        return (any_typ, {})
+
+
+def convert_parameter_value(value, param_type):
+    """
+    Convert parameter value based on its type specification.
+
+    Args:
+        value: The input value from ComfyUI node connection
+        param_type: Type specification (string, number, array-str, array-int, lora-weight)
+
+    Returns:
+        Converted value appropriate for the API
+    """
+    print(f"[WaveSpeed] Converting value {value} (type: {type(value)}) to {param_type}")
+
+    if param_type == "array-str":
+        if isinstance(value, list):
+            result = [str(item) for item in value]
+        elif isinstance(value, str):
+            result = [item.strip() for item in value.split(',') if item.strip()]
+        else:
+            result = [str(value)]
+        print(f"[WaveSpeed] array-str conversion result: {result}")
+        return result
+
+    elif param_type == "array-int":
+        if isinstance(value, list):
+            converted = []
+            for item in value:
+                try:
+                    if isinstance(item, (int, float)):
+                        converted.append(item)
+                    else:
+                        converted.append(float(item))
+                except (ValueError, TypeError):
+                    converted.append(str(item))
+            result = converted
+        elif isinstance(value, str):
+            converted = []
+            for item in value.split(','):
+                item = item.strip()
+                if item:
+                    try:
+                        converted.append(float(item))
+                    except ValueError:
+                        converted.append(item)
+            result = converted
+        else:
+            try:
+                result = [float(value)]
+            except (ValueError, TypeError):
+                result = [str(value)]
+        print(f"[WaveSpeed] array-int conversion result: {result}")
+        return result
+
+    elif param_type == "lora-weight":
+        if isinstance(value, dict):
+            if 'path' in value and 'scale' in value:
+                result = value
+                print(f"[WaveSpeed] lora-weight (structured single object) conversion result: {result}")
+                return result
+            else:
+                print(f"[WaveSpeed] Invalid LoRA object, missing required fields: {value}")
+                result = {}
+        elif isinstance(value, list):
+            valid_loras = []
+            for item in value:
+                if isinstance(item, dict) and 'path' in item and 'scale' in item:
+                    valid_loras.append(item)
+                else:
+                    print(f"[WaveSpeed] Invalid LoRA item, skipping: {item}")
+            result = valid_loras
+            print(f"[WaveSpeed] lora-weight (structured array) conversion result: {result}")
+            return result
+        elif hasattr(value, '__iter__') and not isinstance(value, str):
+            if len(value) > 0 and isinstance(value[0], dict) and 'path' in value[0] and 'scale' in value[0]:
+                result = list(value)
+                print(f"[WaveSpeed] lora-weight (WAVESPEED_LORAS) conversion result: {result}")
+                return result
+            result = list(value)
+        elif isinstance(value, str):
+            if value.strip().startswith('{') and value.strip().endswith('}'):
+                try:
+                    import json
+                    parsed = json.loads(value)
+                    if isinstance(parsed, dict):
+                        if 'path' not in parsed or 'scale' not in parsed:
+                            raise ValueError("LoRA object must have 'path' and 'scale' fields")
+                        result = parsed
+                        print(f"[WaveSpeed] lora-weight (single JSON string) conversion result: {result}")
+                        return result
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"[WaveSpeed] Failed to parse single LoRA JSON: {e}")
+                    result = {}
+            elif value.strip().startswith('[') and value.strip().endswith(']'):
+                try:
+                    import json
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        for item in parsed:
+                            if not isinstance(item, dict) or 'path' not in item or 'scale' not in item:
+                                raise ValueError("Each LoRA item must have 'path' and 'scale' fields")
+                        result = parsed
+                        print(f"[WaveSpeed] lora-weight (JSON array string) conversion result: {result}")
+                        return result
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"[WaveSpeed] Failed to parse LoRA JSON array: {e}")
+                    result = []
+            else:
+                loras = []
+                if value.strip():
+                    pairs = [pair.strip() for pair in value.split(',') if pair.strip()]
+                    for pair in pairs:
+                        if ':' in pair:
+                            path, scale_str = pair.split(':', 1)
+                            try:
+                                scale = float(scale_str.strip())
+                                loras.append({"path": path.strip(), "scale": scale})
+                            except ValueError:
+                                print(f"[WaveSpeed] Invalid scale value in LoRA pair: {pair}")
+                        else:
+                            loras.append({"path": pair.strip(), "scale": 1.0})
+                result = loras
+        else:
+            result = {}
+        print(f"[WaveSpeed] lora-weight conversion result: {result}")
+        return result
+
+    elif param_type == "number":
+        try:
+            if isinstance(value, (int, float)):
+                result = value
+            else:
+                result = float(value)
+        except (ValueError, TypeError):
+            result = value
+        print(f"[WaveSpeed] number conversion result: {result}")
+        return result
+
+    else:
+        result = str(value) if value is not None else ""
+        print(f"[WaveSpeed] string conversion result: {result}")
+        return result
+
+
+class WaveSpeedOutputProcessor:
+    """
+    Shared utility class for processing WaveSpeed API outputs
+    """
+
+    @staticmethod
+    def process_outputs(task_id, outputs):
+        """
+        Process API outputs and categorize them into different types
+
+        Args:
+            task_id: Task ID
+            outputs: List of outputs from API response
+
+        Returns:
+            tuple: (task_id, video_url, image, audio_url, text, first_image_url, image_urls, model_3d_url)
+        """
+        video_url = ""
+        images = []
+        audio_url = ""
+        text = ""
+        first_image_url = ""
+        image_urls = []
+        model_3d_url = ""
+
+        if outputs and len(outputs) > 0:
+            for output in outputs:
+                if isinstance(output, str):
+                    # Handle string outputs (URLs or plain text)
+                    output_lower = output.lower()
+                    if any(ext in output_lower for ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm']):
+                        if not video_url:
+                            video_url = output
+                    elif any(ext in output_lower for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                        try:
+                            images.append(output)
+                        except Exception as e:
+                            print(f"Failed to load image: {e}")
+                    elif any(ext in output_lower for ext in ['.mp3', '.wav', '.m4a', '.flac']):
+                        if not audio_url:
+                            audio_url = output
+                    elif any(ext in output_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl']):
+                        if not model_3d_url:
+                            model_3d_url = output
+                    else:
+                        if not text and not output.startswith(('http://', 'https://', 'ftp://', 'data:')):
+                            text = output
+                elif isinstance(output, (dict, list)):
+                    # Handle structured data (JSON objects/arrays)
+                    # Convert to formatted JSON string for text output
+                    if not text:
+                        text = json.dumps(output, indent=2, ensure_ascii=False)
+                        print(f"[WaveSpeed] Structured output converted to JSON text")
+                else:
+                    # Handle other types (numbers, booleans, etc.)
+                    if not text:
+                        text = str(output)
+
+        # Only convert to tensor if we have images, otherwise return None
+        image = imageurl2tensor(images) if images else None
+        if images:
+            first_image_url = images[0]
+            image_urls = images
+        return (task_id, video_url, image, audio_url, text, first_image_url, image_urls, model_3d_url)
+
+
+class DynamicRequest:
+    """
+    Dynamic request class that can handle any API endpoint and parameters
+    """
+
+    def __init__(self, api_path: str, request_json: dict):
+        self.api_path = api_path
+        self.request_json = request_json
+
+    def build_payload(self) -> dict:
+        """Build the request payload"""
+        return self.request_json
+
+    def get_api_path(self) -> str:
+        """Get the API path for this model"""
+        return self.api_path
+
+
+class WaveSpeedAIPredictor:
+    """
+    WaveSpeed AI Predictor Node - All-in-One Solution
+
+    This node combines model selection, parameter configuration, and task execution
+    into a single, user-friendly interface. It provides:
+
+    1. Dynamic model selection (category -> model)
+    2. Auto-generated parameters based on model schema
+    3. Real-time task execution with progress feedback
+    4. Multi-format output (image, video, audio, text)
+    5. Smart parameter mapping for node-to-node data passing
+
+    User workflow:
+    - Select a model
+    - Fill in parameters
+    - Wait for results
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def _normalize_media_input(input_data, media_type="generic"):
+        """
+        Normalize various input formats to a list of URLs
+
+        Supports:
+        - Single URL string: "https://..."
+        - URL list: ["url1", "url2", "url3"]
+        - Comma-separated string: "url1, url2, url3"
+        - Mixed formats from multiple nodes
+        """
+        if not input_data:
+            return []
+
+        result = []
+
+        if isinstance(input_data, str):
+            # Single URL or comma-separated URLs
+            if ',' in input_data:
+                # Comma-separated
+                result = [url.strip() for url in input_data.split(',') if url.strip()]
+            else:
+                # Single URL
+                if input_data.strip():
+                    result = [input_data.strip()]
+        elif isinstance(input_data, (list, tuple)):
+            # List of URLs
+            for item in input_data:
+                if isinstance(item, str) and item.strip():
+                    result.append(item.strip())
+                elif isinstance(item, (list, tuple)):
+                    # Nested list
+                    result.extend(WaveSpeedAIPredictor._normalize_media_input(item, media_type))
+        else:
+            # Try to convert to string
+            str_val = str(input_data).strip()
+            if str_val:
+                result = [str_val]
+
+        print(f"[WaveSpeed] Normalized {media_type} input: {len(result)} items")
+        return result
+
+    @staticmethod
+    def _merge_with_existing(existing, new_list):
+        """
+        Merge existing parameter value with new input
+
+        Strategy:
+        - If existing is empty, use new_list
+        - If existing is single value, convert to list and append
+        - If existing is list, append to it
+        """
+        if not existing:
+            return new_list[0] if len(new_list) == 1 else new_list
+
+        if isinstance(existing, list):
+            return existing + new_list
+        else:
+            return [existing] + new_list
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": ContainsAnyDict(),  # Allow dynamic inputs from JavaScript
+            "hidden": {
+                "model_id": ("STRING", {"default": ""}),
+                "request_json": ("STRING", {"default": "{}"}),
+                "param_map": ("STRING", {"default": "{}"}),
+            }
+        }
+
+    RETURN_TYPES = (any_typ,)
+    RETURN_NAMES = ("output",)
+
+    CATEGORY = "WaveSpeedAI"
+    FUNCTION = "generate"
+
+    OUTPUT_NODE = False
+
+    def generate(self, model_id="", request_json="{}", param_map="{}", **kwargs):
+        """
+        All-in-One generation function: create task and execute
+
+        Args:
+            model_id: The API path for the model (required, passed via widgets_values)
+            request_json: Base request JSON with widget default values
+            param_map: Parameter metadata (types, requirements)
+            **kwargs: Dynamic parameters from connectable inputs (e.g., prompt="...", seed=123)
+
+        Returns:
+            tuple: (output,) - Single anytype output
+        """
+        print("=" * 80)
+        print("[WaveSpeed Predictor] DEBUG: Function called with parameters:")
+        print(f"  Connected inputs (kwargs): {list(kwargs.keys())}")
+        for key, value in kwargs.items():
+            print(f"    {key}: {type(value).__name__} = {str(value)[:100]}")
+        print("=" * 80)
+
+        try:
+            # Get API key from config
+            api_key = get_api_key_from_config()
+            if not api_key:
+                raise ValueError(
+                    "No API key configured. Please go to Settings → WaveSpeed and enter your API key. "
+                    "You can get an API key at https://wavespeed.ai"
+                )
+            # model_id actually contains the api_path from frontend
+            api_path = model_id
+
+            # Validate that model_id is provided
+            if not api_path or api_path == "":
+                print(f"[WaveSpeed Predictor] ERROR: No model selected!")
+                raise ValueError("Please select a model first.")
+
+            # Step 1: Parse and build request parameters
+            print(f"[WaveSpeed Predictor] Step 1: Parsing parameters for API path {api_path}")
+
+            try:
+                request_json_dict = json.loads(request_json) if request_json else {}
+            except json.JSONDecodeError:
+                request_json_dict = {}
+
+            try:
+                param_metadata = json.loads(param_map) if param_map else {}
+            except json.JSONDecodeError:
+                param_metadata = {}
+
+            print(f"[WaveSpeed Predictor] Connected inputs: {list(kwargs.keys())}")
+
+            # Step 1.5: Process tensor inputs - upload connected tensors to get URLs
+            # Directly check each kwarg for tensor data (covers image/video/audio)
+            print(f"[WaveSpeed Predictor] Step 1.5: Checking for tensor inputs...")
+
+            for param_name, param_value in list(kwargs.items()):
+                # Check if this value is a tensor (works for image/video/audio tensors)
+                if is_tensor_or_image(param_value):
+                    print(f"[WaveSpeed Predictor] ✓ Found tensor for parameter '{param_name}'")
+                    print(f"  - tensor type: {type(param_value).__name__}")
+                    print(f"  - tensor shape: {param_value.shape if hasattr(param_value, 'shape') else 'N/A'}")
+
+                    try:
+                        print(f"[WaveSpeed Predictor] ✓ Uploading tensor for '{param_name}'...")
+                        uploaded_url = upload_tensor_to_wavespeed(param_value)
+                        # Update both kwargs and request_json_dict with uploaded URL
+                        kwargs[param_name] = uploaded_url
+                        request_json_dict[param_name] = uploaded_url
+                        print(f"[WaveSpeed Predictor] ✓ Tensor uploaded successfully: {uploaded_url}")
+                    except Exception as e:
+                        print(f"[WaveSpeed Predictor] ✗ Failed to upload tensor for '{param_name}': {e}")
+                        import traceback
+                        traceback.print_exc()
+                        raise ValueError(f"Failed to upload tensor for '{param_name}': {e}")
+
+            print(f"[WaveSpeed Predictor] Step 1.5 completed.")
+
+            # Step 2a: Identify and merge array parameters
+            # Array parameters are split into multiple inputs (image_0, image_1, image_2...)
+            # We need to merge them back into arrays (images: ["url0", "url1", "url2"])
+            array_params = {}
+            for param_name, param_info in param_metadata.items():
+                if isinstance(param_info, dict) and param_info.get('isArray'):
+                    array_params[param_name] = param_info
+
+            print(f"[WaveSpeed Predictor] Detected array parameters: {list(array_params.keys())}")
+
+            # Merge array member inputs
+            for array_param_name, array_info in array_params.items():
+                # Determine singular form: images -> image
+                if array_param_name.endswith('s'):
+                    singular_prefix = array_param_name[:-1]
+                else:
+                    singular_prefix = array_param_name
+
+                # Find all matching array member inputs
+                # Support both formats: image0, image1 (no underscore) and image_0, image_1 (with underscore)
+                array_members = []
+                
+                import re
+                # Pattern matches: image0, image1, image_0, image_1, etc.
+                pattern = re.compile(f'^{re.escape(singular_prefix)}_?(\\d+)$')
+
+                for key, value in kwargs.items():
+                    match = pattern.match(key)
+                    if match:
+                        try:
+                            # Extract index from key
+                            index = int(match.group(1))
+
+                            # Skip empty values
+                            if value is None or value == '':
+                                print(f"[WaveSpeed Predictor] Skipping empty value for {key}")
+                                continue
+
+                            array_members.append((index, value))
+                            print(f"[WaveSpeed Predictor] Found array member {key} = {value}")
+
+                        except (ValueError, IndexError) as e:
+                            print(f"[WaveSpeed Predictor] Failed to parse array member key {key}: {e}")
+                            pass
+
+                # Sort by index
+                array_members.sort(key=lambda x: x[0])
+
+                # Extract values and convert types
+                array_values = []
+                for index, value in array_members:
+                    # Check if value is a tensor (needs upload)
+                    if is_tensor_or_image(value):
+                        print(f"[WaveSpeed Predictor] Detected tensor input for {singular_prefix}{index}, uploading...")
+                        try:
+                            uploaded_url = upload_tensor_to_wavespeed(value)
+                            array_values.append(uploaded_url)
+                            print(f"[WaveSpeed Predictor] Tensor uploaded successfully: {uploaded_url}")
+                        except Exception as e:
+                            print(f"[WaveSpeed Predictor] Failed to upload tensor for {singular_prefix}{index}: {e}")
+                            # Continue with next item instead of failing the whole request
+                            continue
+                    else:
+                        # Type conversion for non-tensor values
+                        item_type = array_info.get('itemType', 'string')
+                        converted = convert_parameter_value(value, item_type)
+                        if converted:
+                            array_values.append(converted)
+                            print(f"[WaveSpeed Predictor] Converted {singular_prefix}{index}: {converted}")
+
+                # Merge into request parameters
+                if array_values:
+                    request_json_dict[array_param_name] = array_values
+                    print(f"[WaveSpeed Predictor] Merged array parameter '{array_param_name}': {len(array_values)} items")
+                    print(f"  Final values: {array_values}")
+                else:
+                    # No values provided, check if there's a default value
+                    if array_param_name in request_json_dict:
+                        print(f"[WaveSpeed Predictor] Using default value for '{array_param_name}': {request_json_dict[array_param_name]}")
+                    else:
+                        print(f"[WaveSpeed Predictor] No values provided for '{array_param_name}'")
+
+            # Step 2b: Use UI widget values only (no validation, no modification)
+            # - Tensor inputs: handled in Step 1.5 (upload) and Step 2a (array merge)
+            # - Other parameters: use values from UI widgets as-is (request_json_dict)
+            # Filter out empty values to avoid API validation errors
+            print(f"[WaveSpeed Predictor] Final request parameters ready")
+            filtered_params = {}
+            for key, value in request_json_dict.items():
+                # Skip empty strings, empty lists, None (but keep 0 and False)
+                if value == '' or value == [] or value is None:
+                    continue
+                filtered_params[key] = value
+
+            print(f"[WaveSpeed Predictor] Filtered parameters: {filtered_params}")
+
+            # Step 2: Submit task to API
+            print(f"[WaveSpeed Predictor] Step 2: Submitting task to API")
+
+            wavespeed_client = WaveSpeedClient(api_key)
+            dynamic_request = DynamicRequest(api_path, filtered_params)
+
+            print(f"[WaveSpeed Predictor] Submitting to API path: {api_path}")
+
+            # Step 3: Wait for task completion
+            print(f"[WaveSpeed Predictor] Step 3: Waiting for task completion...")
+
+            response = wavespeed_client.send_request(
+                dynamic_request,
+                wait_for_completion=True,
+                polling_interval=5,
+                timeout=300
+            )
+
+            if not response:
+                raise ValueError("No response from API")
+
+            # Step 4: Process outputs - Smart single output
+            print(f"[WaveSpeed Predictor] Step 4: Processing outputs")
+
+            task_id = response.get("id", "")
+            status = response.get("status", "completed")
+            raw_outputs = response.get("outputs", [])
+
+            print(f"[WaveSpeed Predictor] Task {task_id} completed with status: {status}")
+            print(f"[WaveSpeed Predictor] Raw outputs: {raw_outputs}")
+
+            # Smart output selection
+            output = self._select_smart_output(raw_outputs)
+
+            print(f"[WaveSpeed Predictor] Smart output selected: {type(output).__name__} = {output if not isinstance(output, (list, dict)) else f'{type(output).__name__}[{len(output)}]'}")
+            print(f"[WaveSpeed Predictor] Generation completed successfully!")
+
+            return (output,)
+
+        except Exception as e:
+            error_message = str(e)
+            print(f"[WaveSpeed Predictor] Error: {error_message}")
+            raise Exception(f"WaveSpeedAIPredictor failed: {error_message}")
+
+    def _select_smart_output(self, raw_outputs):
+        """
+        Smart output selection based on content type.
+        Priority: Video > Images > Audio > 3D Model > Text
+
+        Args:
+            raw_outputs: List of outputs from API
+
+        Returns:
+            Single output (anytype): URL string, IMAGE tensor, list of URLs, or text
+        """
+        if not raw_outputs:
+            return None
+
+        # Single output: return directly as URL (do NOT convert to tensor)
+        if len(raw_outputs) == 1:
+            output = raw_outputs[0]
+            print(f"[WaveSpeed] Output: {output}")
+            return output
+
+        # Multiple outputs: prioritize by type
+        # Priority 1: Video
+        for output in raw_outputs:
+            if isinstance(output, str) and self._is_video_url(output):
+                return output
+
+        # Priority 2: Images (return as URL string or list of URLs, do NOT convert to tensor)
+        image_urls = [o for o in raw_outputs
+                      if isinstance(o, str) and self._is_image_url(o)]
+        if image_urls:
+            result = image_urls[0] if len(image_urls) == 1 else image_urls
+            print(f"[WaveSpeed] Output: Image URL(s) - {len(image_urls)} image(s)")
+            return result
+
+        # Priority 3: Audio
+        for output in raw_outputs:
+            if isinstance(output, str) and self._is_audio_url(output):
+                return output
+
+        # Priority 4: 3D Model
+        for output in raw_outputs:
+            if isinstance(output, str) and self._is_3d_model_url(output):
+                return output
+
+        # Priority 5: Text or other types
+        # Return first non-URL output or first output
+        for output in raw_outputs:
+            if not isinstance(output, str) or not output.startswith(('http://', 'https://')):
+                return output
+
+        # Fallback: return first output
+        return raw_outputs[0]
+
+    @staticmethod
+    def _is_video_url(url):
+        """Check if URL is a video"""
+        if not isinstance(url, str):
+            return False
+        url_lower = url.lower()
+        return any(ext in url_lower for ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm'])
+
+    @staticmethod
+    def _is_image_url(url):
+        """Check if URL is an image"""
+        if not isinstance(url, str):
+            return False
+        url_lower = url.lower()
+        return any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
+
+    @staticmethod
+    def _is_audio_url(url):
+        """Check if URL is audio"""
+        if not isinstance(url, str):
+            return False
+        url_lower = url.lower()
+        return any(ext in url_lower for ext in ['.mp3', '.wav', '.m4a', '.flac'])
+
+    @staticmethod
+    def _is_3d_model_url(url):
+        """Check if URL is a 3D model"""
+        if not isinstance(url, str):
+            return False
+        url_lower = url.lower()
+        return any(ext in url_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl'])
+
+    @classmethod
+    def IS_CHANGED(cls, **_):
+        return float("nan")
+
+
+NODE_CLASS_MAPPINGS = {
+    "WaveSpeedAIPredictor": WaveSpeedAIPredictor,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "WaveSpeedAIPredictor": "WaveSpeedAI Predictor⚡",
+}
