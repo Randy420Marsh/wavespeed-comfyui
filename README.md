@@ -277,3 +277,4 @@ While we still support the individual model nodes listed below, we recommend mig
 ### How to Use image_url in Nodes
 1. You can use the "WaveSpeedAi Upload Image" node to convert a local IMAGE into an image_url.
 2. Connect the output to the corresponding node that requires it. You can find examples in the provided samples.
+ 
