@@ -5,6 +5,55 @@
 import { getMediaType, getOriginalApiType } from './parameters.js';
 import { createMediaWidgetUI } from './widgets.js';
 
+// Configure connection change handlers for a node
+export function configureConnectionHandlers(node) {
+    // Save original onConnectionsChange method
+    const originalOnConnectionsChange = node.onConnectionsChange;
+
+    node.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
+        // Call original method
+        if (originalOnConnectionsChange) {
+            originalOnConnectionsChange.apply(this, arguments);
+        }
+
+        // Handle input connection changes
+        if (type === LiteGraph.INPUT) {
+            const input = this.inputs?.[slotIndex];
+            if (input && input._wavespeed_dynamic) {
+                // Update widget editability based on connection state
+                updateSingleMediaWidgetEditability(this, input.name);
+            }
+        }
+    };
+
+    // Save original onConnectInput to check if input can be connected
+    const originalOnConnectInput = node.onConnectInput;
+
+    node.onConnectInput = function(inputIndex, outputType, outputSlot, outputNode, outputIndex) {
+        const input = this.inputs?.[inputIndex];
+
+        // Check if this is a media parameter with value
+        if (input && input._wavespeed_dynamic) {
+            const widget = this.widgets?.find(w => w._wavespeed_param === input.name);
+            if (widget && widget.inputEl) {
+                const hasValue = widget.inputEl.value && widget.inputEl.value.trim() !== '';
+                if (hasValue) {
+                    // Prevent connection when input has value
+                    console.log('[WaveSpeed Predictor] Cannot connect: input has value');
+                    return false;
+                }
+            }
+        }
+
+        // Call original method
+        if (originalOnConnectInput) {
+            return originalOnConnectInput.apply(this, arguments);
+        }
+
+        return true;
+    };
+}
+
 // Get ComfyUI input type
 function getComfyInputType(param) {
     const typeMap = {

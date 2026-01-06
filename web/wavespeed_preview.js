@@ -726,11 +726,31 @@ app.registerExtension({
             if (existingWidget && existingWidget.element) {
                 const container = existingWidget.element;
 
-                // Try to update existing content for images
+                // Try to update existing content based on media type
                 if (mediaType === 'image') {
                     const existingImg = container.querySelector('img');
                     if (existingImg) {
                         existingImg.src = mediaData.url;
+                        return; // Content updated, done
+                    }
+                } else if (mediaType === 'video') {
+                    const existingVideo = container.querySelector('video');
+                    if (existingVideo) {
+                        existingVideo.src = mediaData.url;
+                        existingVideo.load(); // Reload video with new source
+                        return; // Content updated, done
+                    }
+                } else if (mediaType === 'audio') {
+                    const existingAudio = container.querySelector('audio');
+                    if (existingAudio) {
+                        existingAudio.src = mediaData.url;
+                        existingAudio.load(); // Reload audio with new source
+                        return; // Content updated, done
+                    }
+                } else if (mediaType === 'text') {
+                    const existingText = container.querySelector('div[style*="pre-wrap"]');
+                    if (existingText) {
+                        existingText.textContent = mediaData.content;
                         return; // Content updated, done
                     }
                 }

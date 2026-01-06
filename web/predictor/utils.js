@@ -276,3 +276,103 @@ export function camelToSnake(str) {
 export function snakeToCamel(str) {
     return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
 }
+
+// Show loading overlay
+export function showLoadingOverlay(node) {
+    // Create overlay if not exists
+    if (!node._loadingOverlay) {
+        const overlay = document.createElement('div');
+        overlay.className = 'wavespeed-loading-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.right = '0';
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = '9999';
+        overlay.style.pointerEvents = 'all';
+
+        const loadingText = document.createElement('div');
+        loadingText.textContent = '⏳ Loading model...';
+        loadingText.style.color = '#4a9eff';
+        loadingText.style.fontSize = '14px';
+        loadingText.style.fontWeight = '600';
+        loadingText.style.marginBottom = '8px';
+
+        const subText = document.createElement('div');
+        subText.textContent = 'Please wait...';
+        subText.style.color = '#888';
+        subText.style.fontSize = '12px';
+
+        overlay.appendChild(loadingText);
+        overlay.appendChild(subText);
+
+        node._loadingOverlay = overlay;
+    }
+
+    // Update overlay height dynamically based on node size
+    // Subtract title bar height (typically 30px) to fit within the content area    
+    // 2.7 is a editable rate, because of it is suitable here
+    if (node._loadingOverlay && node.size && node.size[1]) {
+        const titleHeight = LiteGraph.NODE_TITLE_HEIGHT || 30;
+        const overlayHeight = node.size[1] - titleHeight * 2.7; 
+        node._loadingOverlay.style.height = `${overlayHeight}px`;
+    }
+
+    // Add overlay to main container
+    if (node._mainContainer && !node._mainContainer.contains(node._loadingOverlay)) {
+        node._mainContainer.style.position = 'relative';
+        node._mainContainer.appendChild(node._loadingOverlay);
+    }
+
+    // Disable fuzzy selector
+    if (node._fuzzyModelSelector && node._fuzzyModelSelector.input) {
+        node._fuzzyModelSelector.input.disabled = true;
+        node._fuzzyModelSelector.input.style.opacity = '0.5';
+        node._fuzzyModelSelector.input.style.cursor = 'not-allowed';
+    }
+
+    // Disable category tabs
+    if (node._categoryTabsWrapper) {
+        const tabs = node._categoryTabsWrapper.querySelectorAll('button');
+        tabs.forEach(tab => {
+            tab.disabled = true;
+            tab.style.opacity = '0.5';
+            tab.style.cursor = 'not-allowed';
+        });
+    }
+}
+
+// Hide loading overlay
+export function hideLoadingOverlay(node) {
+    // Remove overlay
+    if (node._loadingOverlay && node._loadingOverlay.parentNode) {
+        node._loadingOverlay.parentNode.removeChild(node._loadingOverlay);
+    }
+
+    // Re-enable fuzzy selector
+    if (node._fuzzyModelSelector && node._fuzzyModelSelector.input) {
+        node._fuzzyModelSelector.input.disabled = false;
+        node._fuzzyModelSelector.input.style.opacity = '1';
+        node._fuzzyModelSelector.input.style.cursor = 'pointer';
+    }
+
+    // Re-enable category tabs
+    if (node._categoryTabsWrapper) {
+        const tabs = node._categoryTabsWrapper.querySelectorAll('button');
+        tabs.forEach(tab => {
+            tab.disabled = false;
+            tab.style.opacity = '1';
+            tab.style.cursor = 'pointer';
+        });
+    }
+
+    // Force node refresh
+    if (node.graph) {
+        node.setSize(node.computeSize());
+        node.graph.setDirtyCanvas(true, true);
+    }
+}

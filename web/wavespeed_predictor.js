@@ -406,7 +406,15 @@ async function createBasicUI(node, apiModule, utilsModule) {
         const fuzzySelector = new FuzzyModelSelector(async (selectedModelDisplay) => {
             console.log('[WaveSpeed Predictor] Model selected via FuzzySelector:', selectedModelDisplay);
             if (selectedModelDisplay && selectedModelDisplay !== "Select a model...") {
-                await loadModelParameters(node, selectedModelDisplay, apiModule);
+                // Show loading overlay
+                utilsModule.showLoadingOverlay(node);
+
+                try {
+                    await loadModelParameters(node, selectedModelDisplay, apiModule);
+                } finally {
+                    // Hide loading overlay
+                    utilsModule.hideLoadingOverlay(node);
+                }
             }
         });
 
@@ -514,6 +522,10 @@ async function createBasicUI(node, apiModule, utilsModule) {
             console.log('[WaveSpeed Predictor] Restoring saved workflow data...');
             await restoreWorkflowData(node, apiModule);
         }
+
+        // Configure connection change handlers
+        const inputsModule = await import('./predictor/inputs.js');
+        inputsModule.configureConnectionHandlers(node);
 
         console.log('[WaveSpeed Predictor] Basic UI created successfully');
 
