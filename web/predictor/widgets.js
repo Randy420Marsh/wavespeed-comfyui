@@ -5,6 +5,39 @@
 import { getMediaType, getOriginalApiType } from './parameters.js';
 import { createFilePreview, createLoadingPreview, createErrorPreview, createUploadButton, uploadToWaveSpeed } from './media.js';
 
+// Helper: Create options for textarea-based DOM widgets (for ComfyUI auto-serialization)
+function textareaOptions(getTextarea, onSet) {
+    return {
+        getValue: () => getTextarea().value,
+        setValue: (v) => {
+            const textarea = getTextarea();
+            if (textarea) {
+                textarea.value = v || '';
+                if (onSet) onSet(v);
+            }
+        }
+    };
+}
+
+// Universal restoreValue helper - creates a standardized restore function for widgets
+// This ensures all DOM widgets use the same restoration mechanism
+function createRestoreValueFn(node, param, customRestoreLogic) {
+    return function(value) {
+        if (value === undefined || value === null) return;
+
+        // 1. Update parameterValues (state)
+        node.wavespeedState.parameterValues[param.name] = value;
+
+        // 2. Execute widget-specific restore logic (update UI)
+        if (customRestoreLogic) {
+            customRestoreLogic.call(this, value);
+        }
+
+        // 3. Update request JSON
+        updateRequestJson(node);
+    };
+}
+
 // Create label element (with required marker)
 function createLabelWithRequired(text, isRequired, description) {
     const labelContainer = document.createElement('span');
@@ -501,12 +534,13 @@ export function createSizeWidget(node, param) {
     heightInput.addEventListener('click', (e) => e.stopPropagation());
     widthInput.addEventListener('mousedown', (e) => e.stopPropagation());
     heightInput.addEventListener('mousedown', (e) => e.stopPropagation());
-    
-    // Create widget
-    const widget = node.addDOMWidget(param.name, 'div', container);
+
+    // Create widget (serialize: false to prevent ComfyUI auto-serialization)
+    const widget = node.addDOMWidget(param.name, 'div', container, { serialize: false });
+
     widget._wavespeed_dynamic = true;
     widget._wavespeed_param = param.name;
-    
+
     // Custom computeSize method, return correct height based on expanded state
     const originalComputeSize = widget.computeSize ? widget.computeSize.bind(widget) : null;
     widget.computeSize = function() {
@@ -519,33 +553,54 @@ export function createSizeWidget(node, param) {
     };
     
     // Define value property
-    try {
-        Object.defineProperty(widget, 'value', {
-            get() {
-                return `${currentWidth}*${currentHeight}`;
-            },
-            set(val) {
-                if (!val) return;
-                const match = val.match(/(\d+)\s*[*x×]\s*(\d+)/i);
-                if (match) {
-                    currentWidth = parseInt(match[1]);
-                    currentHeight = parseInt(match[2]);
-                    widthInput.value = currentWidth;
-                    heightInput.value = currentHeight;
-                    updateRatioButtons();
-                    updateDisplay();
-                }
-            },
-            enumerable: true,
-            configurable: true
-        });
-    } catch (e) {
-        console.warn('[WaveSpeed] Could not define value property for size widget:', e.message);
+    const descriptor = Object.getOwnPropertyDescriptor(widget, 'value');
+    if (!descriptor || descriptor.configurable) {
+        try {
+            Object.defineProperty(widget, 'value', {
+                get() {
+                    return `${currentWidth}*${currentHeight}`;
+                },
+                set(val) {
+                    if (!val) return;
+                    const match = val.match(/(\d+)\s*[*x×]\s*(\d+)/i);
+                    if (match) {
+                        currentWidth = parseInt(match[1]);
+                        currentHeight = parseInt(match[2]);
+                        widthInput.value = currentWidth;
+                        heightInput.value = currentHeight;
+                        updateRatioButtons();
+                        updateDisplay();
+                    }
+                },
+                enumerable: true,
+                configurable: true
+            });
+        } catch (e) {
+            console.warn('[WaveSpeed] Could not define value property for size widget:', e.message);
+            widget.value = `${currentWidth}*${currentHeight}`;
+        }
+    } else {
+        // Use existing value property
+        widget.value = `${currentWidth}*${currentHeight}`;
     }
-    
+
     // Initialize parameter value
     node.wavespeedState.parameterValues[param.name] = `${currentWidth}*${currentHeight}`;
-    
+
+    // Add restoreValue method for workflow restoration
+    widget.restoreValue = createRestoreValueFn(node, param, function(val) {
+        // Parse "256*2048" format
+        const match = val.match(/(\d+)\s*[*x×]\s*(\d+)/i);
+        if (match) {
+            currentWidth = parseInt(match[1]);
+            currentHeight = parseInt(match[2]);
+            widthInput.value = currentWidth;
+            heightInput.value = currentHeight;
+            updateRatioButtons();
+            updateDisplay();
+        }
+    });
+
     return widget;
 }
 
@@ -628,16 +683,25 @@ export function createArrayTitleWidget(node, param) {
         const infoIcon = createInfoTooltip(param.parentDescription);
         container.appendChild(infoIcon);
     }
-    
-    const widget = node.addDOMWidget(param.name, 'div', container);
+
+    // Array title widget (serialize: false to prevent ComfyUI auto-serialization)
+    const widget = node.addDOMWidget(param.name, 'div', container, { serialize: false });
+
     widget._wavespeed_dynamic = true;
     widget._wavespeed_array_title = true;
-    
+    widget._wavespeed_no_input = true; // Mark as widget without input
+
     // Title widget has fixed height
+    // CRITICAL: For input slot positioning, this widget should not be counted
+    // But for node size calculation, it should be counted
     widget.computeSize = function() {
         return [node.size[0] - 20, 26];
     };
-    
+
+    // Override computeSize for input position calculation only
+    // When ComfyUI calculates input positions, it should skip this widget
+    // We'll handle this in the node's position calculation logic
+
     return widget;
 }
 
@@ -785,9 +849,10 @@ export function createSeedWidget(node, param) {
     
     container.appendChild(labelRow);
     container.appendChild(inputRow);
-    
-    // Create widget
-    const widget = node.addDOMWidget(param.name, 'div', container);
+
+    // Create widget (serialize: false to prevent ComfyUI auto-serialization)
+    const widget = node.addDOMWidget(param.name, 'div', container, { serialize: false });
+
     widget._wavespeed_dynamic = true;
     widget._wavespeed_param = param.name;
     widget._wavespeed_seed = true;
@@ -803,22 +868,29 @@ export function createSeedWidget(node, param) {
     };
     
     // Define value property
-    try {
-        Object.defineProperty(widget, 'value', {
-            get() {
-                return currentValue;
-            },
-            set(val) {
-                if (val !== undefined && val !== null) {
-                    currentValue = Math.round(val);
-                    seedInput.value = currentValue;
-                }
-            },
-            enumerable: true,
-            configurable: true
-        });
-    } catch (e) {
-        console.warn('[WaveSpeed] Could not define value property for seed widget:', e.message);
+    const descriptor = Object.getOwnPropertyDescriptor(widget, 'value');
+    if (!descriptor || descriptor.configurable) {
+        try {
+            Object.defineProperty(widget, 'value', {
+                get() {
+                    return currentValue;
+                },
+                set(val) {
+                    if (val !== undefined && val !== null) {
+                        currentValue = Math.round(val);
+                        seedInput.value = currentValue;
+                    }
+                },
+                enumerable: true,
+                configurable: true
+            });
+        } catch (e) {
+            console.warn('[WaveSpeed] Could not define value property for seed widget:', e.message);
+            widget.value = currentValue;
+        }
+    } else {
+        // Use existing value property
+        widget.value = currentValue;
     }
     
     // Update seed based on mode before execution
@@ -846,13 +918,19 @@ export function createSeedWidget(node, param) {
     
     // Initialize parameter value
     node.wavespeedState.parameterValues[param.name] = currentValue;
-    
+
     // Register to node's beforeExecute callback list
     if (!node._seedWidgets) {
         node._seedWidgets = [];
     }
     node._seedWidgets.push(widget);
-    
+
+    // Add restoreValue method for workflow restoration
+    widget.restoreValue = createRestoreValueFn(node, param, function(val) {
+        currentValue = Math.round(val);
+        seedInput.value = currentValue;
+    });
+
     return widget;
 }
 
@@ -873,7 +951,11 @@ export function createPromptWidget(node, param) {
     
     // Multiline textarea
     const textarea = document.createElement('textarea');
+    const uniqueId = `${param.name}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    textarea.id = uniqueId;
     textarea.value = param.default || '';
+    textarea.setAttribute('autocomplete', 'off');
+
     textarea.placeholder = `Enter ${param.displayName || param.name}...`;
     textarea.style.width = '100%';
     textarea.style.minHeight = '80px';
@@ -901,38 +983,57 @@ export function createPromptWidget(node, param) {
     
     container.appendChild(label);
     container.appendChild(textarea);
-    
-    // Create widget
-    const widget = node.addDOMWidget(param.name, 'div', container);
+
+    // Create widget (serialize: false to prevent ComfyUI auto-serialization)
+    const widget = node.addDOMWidget(param.name, 'div', container, { serialize: false });
+
+
     widget._wavespeed_dynamic = true;
     widget._wavespeed_param = param.name;
-    widget.inputEl = textarea;
-    
+    // Note: Removed widget.inputEl to unify restoration via restoreValue method
+
     // Custom computeSize
     widget.computeSize = function() {
         const height = textarea.offsetHeight + 30; // label + padding
         return [node.size[0] - 20, Math.max(height, 110)];
     };
-    
+
     // Define value property
-    try {
-        Object.defineProperty(widget, 'value', {
-            get() {
-                return textarea.value;
-            },
-            set(val) {
-                textarea.value = val || '';
-            },
-            enumerable: true,
-            configurable: true
-        });
-    } catch (e) {
-        console.warn('[WaveSpeed] Could not define value property for prompt widget:', e.message);
+    const descriptor = Object.getOwnPropertyDescriptor(widget, 'value');
+    if (!descriptor || descriptor.configurable) {
+        // Can redefine, use defineProperty
+        try {
+            Object.defineProperty(widget, 'value', {
+                get() {
+                    return textarea.value;
+                },
+                set(val) {
+                    console.log('[🔍 Prompt Setter]', param.name, '→', val, '| stack:', new Error().stack.split('\n')[2].trim());
+                    textarea.value = val || '';
+                },
+                enumerable: true,
+                configurable: true
+            });
+        } catch (e) {
+            console.warn('[WaveSpeed] Could not define value property for prompt widget:', e.message);
+            // Fallback: use direct proxy methods
+            widget.getValue = () => textarea.value;
+            widget.setValue = (val) => { textarea.value = val || ''; };
+        }
+    } else {
+        // Not configurable, use existing value property from ComfyUI
+        widget.value = textarea.value || param.default || '';
     }
-    
+
     // Initialize parameter value
     node.wavespeedState.parameterValues[param.name] = textarea.value || param.default || '';
-    
+
+    // Add restoreValue method for workflow restoration
+    widget.restoreValue = createRestoreValueFn(node, param, function(val) {
+        textarea.value = val || '';
+        textarea.dispatchEvent(new Event('input'));
+    });
+
     return widget;
 }
 
@@ -1152,6 +1253,7 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
 
     const textarea = document.createElement('textarea');
     textarea.value = param.default || '';
+    console.log('[🔍 Media Create]', param.name, '→ textarea.value:', textarea.value, '| param.default:', param.default);
     textarea.placeholder = param.isExpandedArrayItem ? `Enter ${mediaType}...` : `Enter ${displayName.toLowerCase()}...`;
     textarea.style.flex = '1';
     textarea.style.minHeight = '32px';
@@ -1323,7 +1425,12 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
 
     textarea.addEventListener('input', handleUrlInput);
 
-    const widget = node.addDOMWidget(widgetName, 'div', widgetContainer);
+    // Create widget (serialize: false to prevent ComfyUI auto-serialization)
+    const existingWidget = node.widgets?.find(w => w.name === widgetName);
+    console.log('[🔍 Media Before addDOMWidget]', widgetName, '→ existing:', !!existingWidget);
+    const widget = node.addDOMWidget(widgetName, 'div', widgetContainer, { serialize: false });
+    console.log('[🔍 Media After addDOMWidget]', widgetName, '→ created');
+
     widget.inputEl = textarea;
     widget.uploadBtn = uploadBtn;
     widget.previewContainer = previewContainer;
@@ -1343,32 +1450,42 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
         return [node.size[0] - 20, height];
     };
 
-    try {
-        Object.defineProperty(widget, 'value', {
-            get() {
-                return textarea.value;
-            },
-            set(val) {
-                textarea.value = val || '';
-                textarea.dispatchEvent(new Event('input'));
-            },
-            enumerable: true,
-            configurable: true
-        });
-    } catch (e) {
-        console.warn('[WaveSpeed] Could not define value property, using direct assignment:', e.message);
-        widget.value = param.default || '';
+    // Define value property
+    const descriptor = Object.getOwnPropertyDescriptor(widget, 'value');
+    if (!descriptor || descriptor.configurable) {
+        try {
+            Object.defineProperty(widget, 'value', {
+                get() {
+                    return textarea.value;
+                },
+                set(val) {
+                    console.log('[🔍 Media Setter]', param.name, '→', val, '| stack:', new Error().stack.split('\n')[2].trim());
+                    textarea.value = val || '';
+                    textarea.dispatchEvent(new Event('input'));
+                },
+                enumerable: true,
+                configurable: true
+            });
+        } catch (e) {
+            console.warn('[WaveSpeed] Could not define value property, using direct assignment:', e.message);
+            widget.value = param.default || '';
+        }
+    } else {
+        // Use existing value property
+        widget.value = textarea.value || param.default || '';
     }
 
     node.wavespeedState.parameterValues[param.name] = textarea.value || param.default || '';
+    console.log('[🔍 Media Init]', param.name, '→ parameterValues:', node.wavespeedState.parameterValues[param.name]);
 
-    widget.restoreValue = function(newValue) {
-        if (typeof newValue === 'string') {
-            textarea.value = newValue;
-            node.wavespeedState.parameterValues[param.name] = newValue;
+    // Add restoreValue method for workflow restoration (unified approach)
+    widget.restoreValue = createRestoreValueFn(node, param, function(val) {
+        if (typeof val === 'string') {
+            console.log('[🔍 Media restoreValue]', param.name, '→', val);
+            textarea.value = val;
             textarea.dispatchEvent(new Event('input'));
         }
-    };
+    });
 
     return { widget, textarea };
 }
@@ -1480,9 +1597,16 @@ export function createParameterWidget(node, param) {
     if (widget) {
         widget._wavespeed_dynamic = true;
         widget._wavespeed_param = param.name;
-        
+
         // Initialize parameter value
-        node.wavespeedState.parameterValues[param.name] = widget.value !== undefined ? widget.value : (param.default || "");
+        const existingValue = node.wavespeedState.parameterValues[param.name];
+        if (existingValue !== undefined) {
+            // Restore mode: use existing value from parameterValues
+            widget.value = existingValue;
+        } else {
+            // New widget: initialize parameterValues with widget's default value
+            node.wavespeedState.parameterValues[param.name] = widget.value !== undefined ? widget.value : (param.default || "");
+        }
     }
 
     return widget;

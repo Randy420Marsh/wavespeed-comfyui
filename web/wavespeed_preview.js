@@ -719,10 +719,27 @@ app.registerExtension({
 
             console.log('[WaveSpeed Preview] Media type:', mediaType);
 
-            // Remove old preview widget if exists
-            const existingPreviewIdx = this.widgets?.findIndex(w => w.name === 'preview');
-            if (existingPreviewIdx > -1) {
-                this.widgets.splice(existingPreviewIdx, 1);
+            // Check if we already have a preview widget
+            const existingWidget = this.widgets?.find(w => w.name === 'preview');
+
+            // If widget type matches, try to update instead of recreating
+            if (existingWidget && existingWidget.element) {
+                const container = existingWidget.element;
+
+                // Try to update existing content for images
+                if (mediaType === 'image') {
+                    const existingImg = container.querySelector('img');
+                    if (existingImg) {
+                        existingImg.src = mediaData.url;
+                        return; // Content updated, done
+                    }
+                }
+
+                // For other types or if update failed, remove old widget
+                const idx = this.widgets.indexOf(existingWidget);
+                if (idx !== -1) {
+                    this.widgets.splice(idx, 1);
+                }
             }
 
             // Render based on media type

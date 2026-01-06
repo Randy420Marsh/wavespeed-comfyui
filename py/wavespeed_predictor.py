@@ -10,18 +10,22 @@ Users can:
 All in one place!
 """
 
+import cv2
 import json
 import io
-import base64
+import os
+import re
 import requests
+import tempfile
+import traceback
 import torch
 import numpy as np
+import scipy.io.wavfile as wavfile
 from PIL import Image
 from comfy.comfy_types.node_typing import IO as IO_TYPE
 from .wavespeed_api.client import WaveSpeedClient
 from .wavespeed_api.utils import imageurl2tensor
 from .wavespeed_config import get_api_key_from_config
-
 
 def detect_tensor_type(tensor_data):
     """
@@ -123,7 +127,6 @@ def upload_tensor_to_wavespeed(tensor_data):
     Returns:
         str: Uploaded file URL
     """
-    import requests
     try:
         # Detect tensor type
         tensor_type = detect_tensor_type(tensor_data)
@@ -169,8 +172,6 @@ def upload_tensor_to_wavespeed(tensor_data):
             # Handle video tensor
             # Video tensor format: [B, F, H, W, C] or [F, H, W, C]
             try:
-                import cv2
-
                 if len(data_array.shape) == 5:
                     # [B, F, H, W, C] - take first batch
                     frames = data_array[0]
@@ -185,7 +186,6 @@ def upload_tensor_to_wavespeed(tensor_data):
                     frames = frames.astype(np.uint8)
 
                 # Create temporary video file
-                import tempfile
                 with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_video:
                     temp_path = temp_video.name
 
@@ -213,7 +213,6 @@ def upload_tensor_to_wavespeed(tensor_data):
                     buffer.write(f.read())
 
                 # Clean up temp file
-                import os
                 os.unlink(temp_path)
 
                 filename = 'tensor_upload.mp4'
@@ -236,8 +235,6 @@ def upload_tensor_to_wavespeed(tensor_data):
             # Handle audio tensor
             # Audio tensor format: [B, C, T] or [C, T] or [T]
             try:
-                import scipy.io.wavfile as wavfile
-
                 if len(data_array.shape) == 3:
                     # [B, C, T] - take first batch
                     audio_data = data_array[0]
@@ -279,7 +276,6 @@ def upload_tensor_to_wavespeed(tensor_data):
         file_bytes = buffer.read()
 
         # Get API key
-        from .wavespeed_config import get_api_key_from_config
         api_key = get_api_key_from_config()
         if not api_key:
             raise ValueError("No API key configured. Please configure your WaveSpeed API key.")
@@ -444,7 +440,6 @@ def convert_parameter_value(value, param_type):
         elif isinstance(value, str):
             if value.strip().startswith('{') and value.strip().endswith('}'):
                 try:
-                    import json
                     parsed = json.loads(value)
                     if isinstance(parsed, dict):
                         if 'path' not in parsed or 'scale' not in parsed:
@@ -457,7 +452,6 @@ def convert_parameter_value(value, param_type):
                     result = {}
             elif value.strip().startswith('[') and value.strip().endswith(']'):
                 try:
-                    import json
                     parsed = json.loads(value)
                     if isinstance(parsed, list):
                         for item in parsed:
@@ -763,7 +757,6 @@ class WaveSpeedAIPredictor:
                         print(f"[WaveSpeed Predictor] ✓ Tensor uploaded successfully: {uploaded_url}")
                     except Exception as e:
                         print(f"[WaveSpeed Predictor] ✗ Failed to upload tensor for '{param_name}': {e}")
-                        import traceback
                         traceback.print_exc()
                         raise ValueError(f"Failed to upload tensor for '{param_name}': {e}")
 
@@ -791,7 +784,6 @@ class WaveSpeedAIPredictor:
                 # Support both formats: image0, image1 (no underscore) and image_0, image_1 (with underscore)
                 array_members = []
                 
-                import re
                 # Pattern matches: image0, image1, image_0, image_1, etc.
                 pattern = re.compile(f'^{re.escape(singular_prefix)}_?(\\d+)$')
 
@@ -851,13 +843,28 @@ class WaveSpeedAIPredictor:
                     else:
                         print(f"[WaveSpeed Predictor] No values provided for '{array_param_name}'")
 
-            # Step 2b: Use UI widget values only (no validation, no modification)
-            # - Tensor inputs: handled in Step 1.5 (upload) and Step 2a (array merge)
-            # - Other parameters: use values from UI widgets as-is (request_json_dict)
+            # Step 2b: Merge connected inputs (kwargs) with UI widget values
+            # Priority: kwargs (connected inputs) > request_json_dict (UI widgets)
+            print(f"[WaveSpeed Predictor] Step 2b: Merging connected inputs with UI values")
+
+            # Start with UI widget values
+            merged_params = dict(request_json_dict)
+
+            # Add/override with connected inputs from kwargs
+            for param_name, param_value in kwargs.items():
+                # Skip if already processed as array parameter
+                if any(param_name.startswith(arr_name.rstrip('s') + '_') for arr_name in array_params.keys()):
+                    continue
+
+                # Add non-empty values from kwargs
+                if param_value is not None and param_value != '':
+                    merged_params[param_name] = param_value
+                    print(f"[WaveSpeed Predictor] Added from input: {param_name} = {param_value}")
+
             # Filter out empty values to avoid API validation errors
             print(f"[WaveSpeed Predictor] Final request parameters ready")
             filtered_params = {}
-            for key, value in request_json_dict.items():
+            for key, value in merged_params.items():
                 # Skip empty strings, empty lists, None (but keep 0 and False)
                 if value == '' or value == [] or value is None:
                     continue

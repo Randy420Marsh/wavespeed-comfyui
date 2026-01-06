@@ -68,25 +68,68 @@ app.registerExtension({
             const inputHeight = visibleInputs.length * LiteGraph.NODE_SLOT_HEIGHT;
             const outputHeight = visibleOutputs.length * LiteGraph.NODE_SLOT_HEIGHT;
             
-            // Skip hidden widgets when calculating widget height
+            // Skip hidden widgets and base widget when calculating widget height
+            // Only count widgets that have associated inputs (for correct input slot positioning)
             const widgetHeight = this.widgets?.reduce((h, w) => {
                 // Skip hidden widgets
                 if (w.type === "hidden" || w._wavespeed_hidden) {
+                    return h;
+                }
+                // Skip base widget (wavespeed_main) - it doesn't have an input slot
+                if (w._wavespeed_base) {
                     return h;
                 }
                 const wh = w.computeSize ? w.computeSize()[1] : LiteGraph.NODE_WIDGET_HEIGHT;
                 return h + wh;
             }, 0) || 0;
 
+            // Add base widget height separately (it's displayed but doesn't affect input positions)
+            const baseWidgetHeight = this.widgets?.find(w => w._wavespeed_base)?.computeSize?.()?.[1] || 0;
+
             const maxSlotHeight = Math.max(inputHeight, outputHeight);
-            // Use sum of widgets height and input slot height, not maximum
-            // This ensures all content has enough space
-            const totalHeight = widgetHeight + Math.max(maxSlotHeight, 0) + 30;
+            // Use sum of widgets height (excluding base) + base widget height + input slot height
+            const totalHeight = widgetHeight + baseWidgetHeight + Math.max(maxSlotHeight, 0) + 30;
 
             const width = 800;
             const clampedHeight = Math.max(500, Math.min(totalHeight, 1200));
 
             return [width, clampedHeight];
+        };
+
+        // Override widget's getY method to ensure input slots align correctly
+        // ComfyUI calculates input positions by iterating through widgets and summing heights
+        // We need to ensure only widgets with inputs are counted in position calculation
+        const originalGetY = node.getY;
+        if (typeof originalGetY === 'function') {
+            // Store original for potential use
+            node._originalGetY = originalGetY;
+        }
+        
+        // Override onDrawBackground to apply label offset for input slot positioning
+        // For widgets with vertical layout (label above input), we offset the input slot
+        // to align with the actual input element rather than the widget top
+        const originalOnDrawBackground = node.onDrawBackground;
+        node.onDrawBackground = function(ctx) {
+            if (originalOnDrawBackground) {
+                originalOnDrawBackground.call(this, ctx);
+            }
+
+            // Apply label offset to input slot positions
+            if (this.inputs && this.widgets) {
+                for (const input of this.inputs) {
+                    if (input.widget && input._wavespeed_label_offset) {
+                        // Get widget's current Y position (calculated by LiteGraph)
+                        const widgetY = input.widget.y || 0;
+                        const offsetY = widgetY + input._wavespeed_label_offset;
+
+                        // Set input slot position
+                        if (!input.pos || !Array.isArray(input.pos)) {
+                            input.pos = [0, 0];
+                        }
+                        input.pos[1] = offsetY;
+                    }
+                }
+            }
         };
 
         // Force initial size
@@ -148,6 +191,25 @@ async function initializePredictorWidgets(node) {
         
         console.log('[WaveSpeed Predictor] Widgets and hidden inputs cleared');
 
+        // CRITICAL: Also clear any auto-created input slots from ComfyUI
+        // This fixes the issue where inputs appear on top after refresh
+        // Keep only inputs that are explicitly marked as _wavespeed_dynamic (from configure restore)
+        if (node.inputs && node.inputs.length > 0) {
+            // Filter to keep only dynamic inputs (created in configure for workflow restore)
+            const dynamicInputs = node.inputs.filter(inp => inp._wavespeed_dynamic);
+
+            // If we have dynamic inputs, we're in restore mode - keep them
+            // Otherwise, clear all inputs (this handles the fresh load case)
+            if (dynamicInputs.length === 0) {
+                console.log('[WaveSpeed Predictor] Clearing all auto-created inputs:', node.inputs.map(i => i.name));
+                node.inputs = [];
+            } else {
+                // In restore mode, only keep dynamic inputs
+                console.log('[WaveSpeed Predictor] Keeping dynamic inputs for restore:', dynamicInputs.map(i => i.name));
+                node.inputs = dynamicInputs;
+            }
+        }
+
         // Dynamically import API module
         let apiModule;
         try {
@@ -190,7 +252,7 @@ async function createBasicUI(node, apiModule, utilsModule) {
         preloadContainer.style.color = '#4a9eff';
         preloadContainer.style.textAlign = 'center';
 
-        node.addDOMWidget('preload_indicator', 'div', preloadContainer);
+        node.addDOMWidget('preload_indicator', 'div', preloadContainer, { serialize: false });
 
         try {
             const preloadData = await apiModule.preloadAllModels((progress) => {
@@ -205,7 +267,19 @@ async function createBasicUI(node, apiModule, utilsModule) {
                 node.wavespeedState.categoryList = preloadData.categories;
                 node.wavespeedState.allModels = preloadData.flatModels;
                 node.wavespeedState.modelsByCategory = preloadData.modelsByCategory;
-                console.log('[WaveSpeed Predictor] Models preloaded:', preloadData.categories.length, 'categories');
+
+                // Critical log: Show all categories and their model counts
+                console.log('[WaveSpeed] === Models Loaded ===');
+                console.log(`[WaveSpeed] Total: ${preloadData.flatModels.length} models, ${preloadData.categories.length} categories`);
+                preloadData.categories.forEach((cat, idx) => {
+                    const models = preloadData.modelsByCategory[idx] || [];
+                    console.log(`[WaveSpeed] ${cat.name} (${cat.value}): ${models.length} models`);
+                    if (models.length > 0) {
+                        const samples = models.slice(0, 3).map(m => m.name || m.value).join(', ');
+                        console.log(`[WaveSpeed]   Examples: ${samples}${models.length > 3 ? '...' : ''}`);
+                    }
+                });
+                console.log('[WaveSpeed] ====================');
             }
         } catch (error) {
             console.error('[WaveSpeed Predictor] Preload failed:', error);
@@ -343,11 +417,23 @@ async function createBasicUI(node, apiModule, utilsModule) {
         // Save FuzzyModelSelector reference
         node._fuzzyModelSelector = fuzzySelector;
 
-        // Add main container as single DOM widget
-        const mainWidget = node.addDOMWidget('wavespeed_main', 'div', mainContainer);
+        // Add main container as single DOM widget (serialize: false to prevent ComfyUI auto-serialization)
+        const mainWidget = node.addDOMWidget('wavespeed_main', 'div', mainContainer, { serialize: false });
+
+        // CRITICAL FIX: Set all flags explicitly
         mainWidget._wavespeed_base = true;
+        mainWidget._wavespeed_no_input = true;  // Base widget has no input slot
+        mainWidget._wavespeed_dynamic = false;  // Base widget is not dynamic
+        mainWidget._wavespeed_hidden = false;   // Not hidden (just type='hidden' for positioning)
+
+        // CRITICAL FIX: Set type to 'hidden' to prevent LiteGraph from including it in input position calculation
+        // The base widget is a UI container that should not participate in input slot positioning
+        // Setting type='hidden' makes LiteGraph skip it when calculating input positions,
+        // while the DOM element still renders normally because DOM widgets render independently
+        mainWidget.type = 'hidden';
+
         node._mainContainer = mainContainer;
-        
+
         // Custom computeSize method
         // Use fixed height: header(40) + tabs(3 rows ~100) + selector(45) + padding(15) = 200
         mainWidget.computeSize = function() {
@@ -376,7 +462,7 @@ async function createBasicUI(node, apiModule, utilsModule) {
         if (requestJsonIdx >= 0) {
             node.widgets[requestJsonIdx].type = "hidden";
         }
-        
+
         const paramMapWidget = node.addWidget("text", "param_map", "{}", () => {}, {});
         paramMapWidget.type = "hidden";
         paramMapWidget._wavespeed_hidden = true;
@@ -427,11 +513,6 @@ async function createBasicUI(node, apiModule, utilsModule) {
         if (node._wavespeed_savedData) {
             console.log('[WaveSpeed Predictor] Restoring saved workflow data...');
             await restoreWorkflowData(node, apiModule);
-        }
-
-        node.setSize(node.computeSize());
-        if (node.graph) {
-            node.graph.setDirtyCanvas(true, true);
         }
 
         console.log('[WaveSpeed Predictor] Basic UI created successfully');
@@ -543,7 +624,7 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         // Save to node state
         node.wavespeedState.modelId = actualModelId;
         node.wavespeedState.parameters = parameters;
-        
+
         // Only reset parameter values in non-restore mode
         if (!isRestoring) {
             node.wavespeedState.parameterValues = {};
@@ -558,48 +639,54 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         // Clear old dynamic widgets (keep base widgets and hidden widgets)
         if (node.widgets) {
             const beforeCount = node.widgets.length;
-            
-            // First clean DOM elements and tooltips of DOM widgets
-            for (const w of node.widgets) {
-                if (w._wavespeed_dynamic) {
-                    // Clean DOM elements
-                    if (w.element && w.element.parentNode) {
-                        w.element.parentNode.removeChild(w.element);
-                    }
-                    // Clean tooltips (if any)
-                    if (w.element) {
-                        const tooltips = w.element.querySelectorAll ? 
-                            Array.from(w.element.querySelectorAll('[class*="tooltip"]')) : [];
-                        tooltips.forEach(t => t.remove());
+
+            // CRITICAL: In restore mode, preserve widget values before deletion
+            // LiteGraph has already restored standard widgets in originalConfigure
+            // Save their values to parameterValues before deleting
+            if (isRestoring) {
+                console.log('[🔍 Preserve] Starting to preserve widget values...');
+                for (const widget of node.widgets) {
+                    if (widget._wavespeed_dynamic && widget._wavespeed_param) {
+                        const currentValue = widget.value;
+                        if (currentValue !== undefined) {
+                            node.wavespeedState.parameterValues[widget._wavespeed_param] = currentValue;
+                            console.log(`[🔍 Preserve] ${widget._wavespeed_param}: ${JSON.stringify(currentValue)}`);
+                        }
                     }
                 }
+                console.log('[🔍 Preserve] Final parameterValues:', Object.keys(node.wavespeedState.parameterValues).length);
             }
-            
-            // Clean tooltips mounted to body
+
+            // Only clean up tooltips that are mounted to body (not managed by Vue)
             const bodyTooltips = document.querySelectorAll('.wavespeed-tooltip');
             bodyTooltips.forEach(t => t.remove());
-            
-            node.widgets = node.widgets.filter(w => 
-                w._wavespeed_base || 
-                w._wavespeed_hidden || 
+
+            // Filter widgets array to remove dynamic widgets
+            node.widgets = node.widgets.filter(w =>
+                w._wavespeed_base ||
+                w._wavespeed_hidden ||
                 w.type === "hidden" ||
                 w.name === 'model_id' ||
                 w.name === 'request_json' ||
                 w.name === 'param_map'
             );
             console.log(`[WaveSpeed Predictor] Filtered widgets: ${beforeCount} -> ${node.widgets.length}`);
-            console.log('[WaveSpeed Predictor] Remaining widgets:', node.widgets.map(w => `${w.name}(${w.type})`));
         }
 
         // In restore mode, keep existing input slots (they were created in configure)
         // In non-restore mode, clear old dynamic input slots
         if (!isRestoring && node.inputs) {
-            for (let i = node.inputs.length - 1; i >= 0; i--) {
-                const input = node.inputs[i];
-                if (input._wavespeed_dynamic) {
-                    node.removeInput(i);
+            const inputsToKeep = [];
+            for (const input of node.inputs) {
+                // Keep non-dynamic inputs (if any exist)
+                if (!input._wavespeed_dynamic) {
+                    inputsToKeep.push(input);
                 }
             }
+
+            // Direct replacement - this clears LiteGraph's internal cache
+            node.inputs = inputsToKeep;
+            console.log('[WaveSpeed Predictor] Cleared dynamic inputs, kept:', inputsToKeep.length);
         }
         
         // Clear seed widgets list
@@ -670,23 +757,31 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         console.log(`[WaveSpeed Predictor] Total expanded parameters: ${expandedParams.length}`);
 
         // Create input slot and widget for each expanded parameter
+        // REFERENCE: Standard pattern from setupSingleMediaParameters (inputs.js:55-108)
+        // Key: Create input FIRST, then widget, then associate immediately
+        // This ensures inputs array is stable before ComfyUI calculates positions
+        
         for (const param of expandedParams) {
             try {
                 // Array title does not create input slot
                 if (param.isArrayTitle || param.type === 'ARRAY_TITLE') {
-                    // Only create widget, no input slot
+                    // Only create widget, no input slot (similar to standard pattern but for title)
                     const widget = widgetsModule.createParameterWidget(node, param);
                     if (widget) {
+                        // CRITICAL FIX: Set all flags explicitly for array title
                         widget._wavespeed_dynamic = true;
-                        console.log('[WaveSpeed Predictor] Created array title widget for:', param.name);
+                        widget._wavespeed_no_input = true;  // Array title has no input slot
+                        widget._wavespeed_base = false;
+                        widget._wavespeed_hidden = false;
+                        // console.log('[WaveSpeed Predictor] Created array title widget for:', param.name);
                     }
                     continue;
                 }
                 
-                // 1. Create input slot (in restore mode, check if already exists)
+                // STEP 1: Create input slot FIRST (standard pattern: input before widget)
                 let input = null;
                 if (isRestoring) {
-                    // Find existing input slot
+                    // In restore mode, check if input already exists
                     const existingIdx = node.inputs?.findIndex(inp => inp.name === param.name);
                     if (existingIdx >= 0) {
                         input = node.inputs[existingIdx];
@@ -700,42 +795,55 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                     input = node.addInput(param.name, inputType);
                 }
                 
-                if (input) {
-                    input._wavespeed_dynamic = true;
-                    input._wavespeed_param = param.name;
-                    
-                    // Mark expanded array items
-                    if (param.isExpandedArrayItem) {
-                        input._wavespeed_expanded_array_item = true;
-                        input._wavespeed_parent_array = param.parentArrayName;
-                        input._wavespeed_array_index = param.arrayIndex;
-                    }
+                if (!input) {
+                    console.warn('[WaveSpeed Predictor] Failed to create input for:', param.name);
+                    continue;
                 }
+                
+                // Set input properties
+                input._wavespeed_dynamic = true;
+                input._wavespeed_param = param.name;
+                
+                // Mark expanded array items
+                if (param.isExpandedArrayItem) {
+                    input._wavespeed_expanded_array_item = true;
+                    input._wavespeed_parent_array = param.parentArrayName;
+                    input._wavespeed_array_index = param.arrayIndex;
+                }
+                
+                // console.log('[WaveSpeed Predictor] Created input for:', param.name);
 
-                // 2. Create widget
+                // STEP 2: Create widget (standard pattern: widget after input)
                 const widget = widgetsModule.createParameterWidget(node, param);
-                if (widget) {
-                    widget._wavespeed_dynamic = true;
-                    console.log('[WaveSpeed Predictor] Created widget for:', param.name);
-                    
-                    // 3. Associate input slot and widget
-                    if (input) {
-                        input.widget = widget;
-                        widget.linkedInput = input;
-                    }
+                if (!widget) {
+                    console.warn('[WaveSpeed Predictor] Failed to create widget for:', param.name);
+                    // Input was created but widget failed - this is unusual but we continue
+                    continue;
                 }
+                
+                // CRITICAL FIX: Set all widget flags explicitly to avoid undefined values
+                widget._wavespeed_dynamic = true;
+                widget._wavespeed_no_input = false;  // This widget HAS an input
+                widget._wavespeed_base = false;
+                widget._wavespeed_hidden = false;
+
+                // console.log('[WaveSpeed Predictor] Created widget for:', param.name);
+
+                // STEP 3: Associate input and widget IMMEDIATELY (standard pattern)
+                // This matches the pattern in setupSingleMediaParameters (inputs.js:79-82)
+
+                input.widget = widget;
+                widget.linkedInput = input;
+
+                // console.log('[WaveSpeed Predictor] Associated widget and input for:', param.name);
+                
             } catch (error) {
-                console.error('[WaveSpeed Predictor] Error creating widget for:', param.name, error);
+                console.error('[WaveSpeed Predictor] Error creating parameter:', param.name, error);
             }
         }
 
         // Update request JSON
         widgetsModule.updateRequestJson(node);
-
-        node.setSize(node.computeSize());
-        if (node.graph) {
-            node.graph.setDirtyCanvas(true, true);
-        }
 
         console.log('[WaveSpeed Predictor] Model parameters loaded successfully');
 
@@ -750,7 +858,7 @@ function configureWorkflowSupport(node) {
     const originalSerialize = node.serialize;
     node.serialize = function() {
         const data = originalSerialize ? originalSerialize.call(this) : {};
-        
+
         // Save WaveSpeed state
         data.wavespeed = {
             modelId: this.wavespeedState?.modelId || "",
@@ -759,7 +867,7 @@ function configureWorkflowSupport(node) {
             parameterValues: this.wavespeedState?.parameterValues || {},
             requestJsonValue: this.requestJsonWidget?.value || "{}"
         };
-        
+
         // Save input slot info for connection restore
         if (this.inputs && this.inputs.length > 0) {
             data.wavespeed.savedInputs = this.inputs
@@ -772,14 +880,14 @@ function configureWorkflowSupport(node) {
                     arrayIndex: inp._wavespeed_array_index
                 }));
         }
-        
+
         console.log('[WaveSpeed Predictor] Serializing state:', {
             modelId: data.wavespeed.modelId,
             category: data.wavespeed.category,
             paramCount: Object.keys(data.wavespeed.parameterValues).length,
             inputCount: data.wavespeed.savedInputs?.length || 0
         });
-        
+
         return data;
     };
     
@@ -859,47 +967,46 @@ async function restoreWorkflowData(node, apiModule) {
         // 2. Find and set model selector value
         let displayValue = saved.modelId;
         if (node._fuzzyModelSelector && node.wavespeedState.allModels) {
-            const modelData = node.wavespeedState.allModels.find(m => 
+            const modelData = node.wavespeedState.allModels.find(m =>
                 m.value === saved.modelId || m.name === saved.modelId
             );
-            
+
             if (modelData) {
-                displayValue = saved.category === 'all' 
+                displayValue = saved.category === 'all'
                     ? `${modelData.categoryName} > ${modelData.name}`
                     : modelData.name;
-                
+
                 // Set selector display value (without triggering callback)
                 node._fuzzyModelSelector.setValueWithoutCallback(displayValue);
             }
         }
-        
-        // 3. Load model parameters (use display value, loadModelParameters will parse actual modelId)
-        // Pass isRestoring=true to keep existing input slots
-        await loadModelParameters(node, displayValue, apiModule, true);
-        
-        // 4. Restore parameter values
+
+        // 3. CRITICAL: Restore parameterValues BEFORE loadModelParameters
+        // So that when widgets are created, existing values won't be overwritten
         if (saved.parameterValues && Object.keys(saved.parameterValues).length > 0) {
-            console.log('[WaveSpeed Predictor] Restoring parameter values:', Object.keys(saved.parameterValues));
-            
+            console.log('[WaveSpeed Predictor] Pre-loading parameter values:', Object.keys(saved.parameterValues));
+            node.wavespeedState.parameterValues = { ...saved.parameterValues };
+        }
+
+        // 4. Load model parameters (use display value, loadModelParameters will parse actual modelId)
+        // Pass isRestoring=true to keep existing input slots and preserve parameterValues
+        await loadModelParameters(node, displayValue, apiModule, true);
+
+        // 5. Update widgets with restored values (in case some weren't created with correct values)
+        if (saved.parameterValues && Object.keys(saved.parameterValues).length > 0) {
+            console.log('[WaveSpeed Predictor] Updating widgets with restored values');
+
             // Wait a short time to ensure widgets are created
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             for (const [paramName, paramValue] of Object.entries(saved.parameterValues)) {
-                // Update state
-                node.wavespeedState.parameterValues[paramName] = paramValue;
-                
                 // Find and update widget
                 const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
-                if (widget) {
+                if (widget && widget.value !== paramValue) {
+                    // Only update if value is different
                     if (widget.restoreValue && typeof widget.restoreValue === 'function') {
                         widget.restoreValue(paramValue);
-                    } else if (widget.inputEl) {
-                        // DOM widget (textarea, input)
-                        widget.inputEl.value = paramValue;
-                        // Trigger input event to update preview etc
-                        widget.inputEl.dispatchEvent(new Event('input'));
                     } else {
-                        // Standard widget
                         try {
                             widget.value = paramValue;
                         } catch (e) {
@@ -908,12 +1015,12 @@ async function restoreWorkflowData(node, apiModule) {
                     }
                 }
             }
-            
+
             // Update request JSON
             updateRequestJson(node);
         }
-        
-        // 5. Update node size
+
+        // 6. Update node size
         node.setSize(node.computeSize());
         if (node.graph) {
             node.graph.setDirtyCanvas(true, true);
