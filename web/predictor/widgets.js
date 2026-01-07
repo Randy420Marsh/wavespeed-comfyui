@@ -1008,7 +1008,7 @@ export function createPromptWidget(node, param) {
                     return textarea.value;
                 },
                 set(val) {
-                    console.log('[🔍 Prompt Setter]', param.name, '→', val, '| stack:', new Error().stack.split('\n')[2].trim());
+                    // console.log('[🔍 Prompt Setter]', param.name, '→', val, '| stack:', new Error().stack.split('\n')[2].trim());
                     textarea.value = val || '';
                 },
                 enumerable: true,
@@ -1253,7 +1253,7 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
 
     const textarea = document.createElement('textarea');
     textarea.value = param.default || '';
-    console.log('[🔍 Media Create]', param.name, '→ textarea.value:', textarea.value, '| param.default:', param.default);
+    // console.log('[🔍 Media Create]', param.name, '→ textarea.value:', textarea.value, '| param.default:', param.default);
     textarea.placeholder = param.isExpandedArrayItem ? `Enter ${mediaType}...` : `Enter ${displayName.toLowerCase()}...`;
     textarea.style.flex = '1';
     textarea.style.minHeight = '32px';
@@ -1427,9 +1427,9 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
 
     // Create widget (serialize: false to prevent ComfyUI auto-serialization)
     const existingWidget = node.widgets?.find(w => w.name === widgetName);
-    console.log('[🔍 Media Before addDOMWidget]', widgetName, '→ existing:', !!existingWidget);
+    // console.log('[🔍 Media Before addDOMWidget]', widgetName, '→ existing:', !!existingWidget);
     const widget = node.addDOMWidget(widgetName, 'div', widgetContainer, { serialize: false });
-    console.log('[🔍 Media After addDOMWidget]', widgetName, '→ created');
+    // console.log('[🔍 Media After addDOMWidget]', widgetName, '→ created');
 
     widget.inputEl = textarea;
     widget.uploadBtn = uploadBtn;
@@ -1459,7 +1459,7 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
                     return textarea.value;
                 },
                 set(val) {
-                    console.log('[🔍 Media Setter]', param.name, '→', val, '| stack:', new Error().stack.split('\n')[2].trim());
+                    // console.log('[🔍 Media Setter]', param.name, '→', val, '| stack:', new Error().stack.split('\n')[2].trim());
                     textarea.value = val || '';
                     textarea.dispatchEvent(new Event('input'));
                 },
@@ -1476,12 +1476,12 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     }
 
     node.wavespeedState.parameterValues[param.name] = textarea.value || param.default || '';
-    console.log('[🔍 Media Init]', param.name, '→ parameterValues:', node.wavespeedState.parameterValues[param.name]);
+    // console.log('[🔍 Media Init]', param.name, '→ parameterValues:', node.wavespeedState.parameterValues[param.name]);
 
     // Add restoreValue method for workflow restoration (unified approach)
     widget.restoreValue = createRestoreValueFn(node, param, function(val) {
         if (typeof val === 'string') {
-            console.log('[🔍 Media restoreValue]', param.name, '→', val);
+            // console.log('[🔍 Media restoreValue]', param.name, '→', val);
             textarea.value = val;
             textarea.dispatchEvent(new Event('input'));
         }

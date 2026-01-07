@@ -23,6 +23,9 @@ export function configureConnectionHandlers(node) {
                 // Update widget editability based on connection state
                 updateSingleMediaWidgetEditability(this, input.name);
             }
+
+            // Update model selector and category tabs state based on connection status
+            updateModelSelectorByConnectionState(this);
         }
     };
 
@@ -330,4 +333,67 @@ export function forceNodeRefresh(node) {
             }
         }
     });
+}
+
+// Update model selector and category tabs state based on connection status
+export function updateModelSelectorByConnectionState(node) {
+    const hasConnections = hasDynamicConnections(node);
+    const connectedInputs = getConnectedInputNames(node);
+
+    if (hasConnections) {
+        // Disable fuzzy model selector
+        if (node._fuzzyModelSelector && node._fuzzyModelSelector.input) {
+            const shortList = connectedInputs.slice(0, 2).join(', ');
+            const more = connectedInputs.length > 2 ? ` +${connectedInputs.length - 2}` : '';
+
+            node._fuzzyModelSelector.input.disabled = true;
+            node._fuzzyModelSelector.input.style.opacity = '0.6';
+            node._fuzzyModelSelector.input.style.cursor = 'not-allowed';
+            node._fuzzyModelSelector.input.title = `Cannot switch model - parameters connected:\n${connectedInputs.join(', ')}\n\nDisconnect them first to change model.`;
+
+            // Update placeholder to show lock state
+            const currentPlaceholder = node._fuzzyModelSelector.input.placeholder;
+            if (!currentPlaceholder.includes('🔒')) {
+                node._fuzzyModelSelector.input.setAttribute('data-original-placeholder', currentPlaceholder);
+                node._fuzzyModelSelector.input.placeholder = `🔒 Locked (${shortList}${more})`;
+            }
+        }
+
+        // Disable category tabs
+        if (node._categoryTabsWrapper) {
+            const tabs = node._categoryTabsWrapper.querySelectorAll('button');
+            tabs.forEach(tab => {
+                tab.disabled = true;
+                tab.style.opacity = '0.6';
+                tab.style.cursor = 'not-allowed';
+                tab.title = `Cannot switch category - parameters connected:\n${connectedInputs.join(', ')}\n\nDisconnect them first to change category.`;
+            });
+        }
+    } else {
+        // Enable fuzzy model selector
+        if (node._fuzzyModelSelector && node._fuzzyModelSelector.input) {
+            node._fuzzyModelSelector.input.disabled = false;
+            node._fuzzyModelSelector.input.style.opacity = '1';
+            node._fuzzyModelSelector.input.style.cursor = 'pointer';
+            node._fuzzyModelSelector.input.title = '';
+
+            // Restore original placeholder
+            const originalPlaceholder = node._fuzzyModelSelector.input.getAttribute('data-original-placeholder');
+            if (originalPlaceholder) {
+                node._fuzzyModelSelector.input.placeholder = originalPlaceholder;
+                node._fuzzyModelSelector.input.removeAttribute('data-original-placeholder');
+            }
+        }
+
+        // Enable category tabs
+        if (node._categoryTabsWrapper) {
+            const tabs = node._categoryTabsWrapper.querySelectorAll('button');
+            tabs.forEach(tab => {
+                tab.disabled = false;
+                tab.style.opacity = '1';
+                tab.style.cursor = 'pointer';
+                tab.title = '';
+            });
+        }
+    }
 }

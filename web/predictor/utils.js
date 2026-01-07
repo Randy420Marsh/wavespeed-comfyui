@@ -376,3 +376,106 @@ export function hideLoadingOverlay(node) {
         node.graph.setDirtyCanvas(true, true);
     }
 }
+
+// Setup inputs tracking (Method 1: Proxy + Method 3: Intercept methods)
+export function setupInputsTracking(node) {
+    if (!node.inputs || node._inputsTracking) return;
+
+    const originalInputs = node.inputs;
+    let inputsValue = originalInputs;
+
+    // Method 1: Proxy for array operations
+    const inputsProxy = new Proxy(originalInputs, {
+        get(target, prop) {
+            if (typeof prop === 'string' && ['push', 'pop', 'splice', 'shift', 'unshift'].includes(prop)) {
+                return function(...args) {
+                    const oldLen = target.length;
+                    const result = target[prop].apply(target, args);
+                    const newLen = target.length;
+                    if (oldLen !== newLen) {
+                        console.log('[WaveSpeed] inputs array modified:', {
+                            method: prop,
+                            oldLen,
+                            newLen,
+                            stack: new Error().stack.split('\n').slice(1, 4).join('\n')
+                        });
+                    }
+                    return result;
+                };
+            }
+            return target[prop];
+        }
+    });
+
+    // Method 3: Intercept removeInput/addInput
+    const originalRemoveInput = node.removeInput;
+    const originalAddInput = node.addInput;
+
+    node.removeInput = function(index) {
+        const oldLen = this.inputs?.length || 0;
+        const name = this.inputs?.[index]?.name;
+        const result = originalRemoveInput.apply(this, arguments);
+        console.log('[WaveSpeed] removeInput:', {
+            index,
+            name,
+            oldLen,
+            newLen: this.inputs?.length || 0,
+            stack: new Error().stack.split('\n').slice(1, 4).join('\n')
+        });
+        return result;
+    };
+
+    node.addInput = function(name, type, options) {
+        const oldLen = this.inputs?.length || 0;
+        const result = originalAddInput.apply(this, arguments);
+        console.log('[WaveSpeed] addInput:', {
+            name,
+            type,
+            oldLen,
+            newLen: this.inputs?.length || 0,
+            stack: new Error().stack.split('\n').slice(1, 4).join('\n')
+        });
+        return result;
+    };
+
+    // Method 3: Intercept inputs property setter
+    Object.defineProperty(node, 'inputs', {
+        get: () => inputsValue,
+        set: (newValue) => {
+            const oldLen = inputsValue?.length || 0;
+            const newLen = newValue?.length || 0;
+            if (oldLen !== newLen) {
+                console.log('[WaveSpeed] inputs replaced:', {
+                    oldLen,
+                    newLen,
+                    oldNames: inputsValue?.map(i => i.name) || [],
+                    newNames: newValue?.map(i => i.name) || [],
+                    stack: new Error().stack.split('\n').slice(1, 4).join('\n')
+                });
+            }
+            inputsValue = newValue;
+        },
+        configurable: true,
+        enumerable: true
+    });
+
+    node._inputsTracking = {
+        originalRemoveInput,
+        originalAddInput,
+        originalInputs: originalInputs
+    };
+}
+
+// Cleanup inputs tracking
+export function cleanupInputsTracking(node) {
+    if (!node._inputsTracking) return;
+
+    if (node._inputsTracking.originalRemoveInput) {
+        node.removeInput = node._inputsTracking.originalRemoveInput;
+    }
+    if (node._inputsTracking.originalAddInput) {
+        node.addInput = node._inputsTracking.originalAddInput;
+    }
+
+    delete node._inputsTracking;
+}
