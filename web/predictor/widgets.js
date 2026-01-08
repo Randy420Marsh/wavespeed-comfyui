@@ -188,7 +188,7 @@ export function createSizeWidget(node, param) {
     let currentHeight = 1024;
     let currentRatio = '1:1';
     const minSize = param.min || 256;
-    const maxSize = param.max || 2048;
+    const maxSize = param.max || 1536;
     
     // Parse default value
     if (param.default) {
@@ -589,7 +589,7 @@ export function createSizeWidget(node, param) {
 
     // Add restoreValue method for workflow restoration
     widget.restoreValue = createRestoreValueFn(node, param, function(val) {
-        // Parse "256*2048" format
+        // Parse "256*1536" format
         const match = val.match(/(\d+)\s*[*x×]\s*(\d+)/i);
         if (match) {
             currentWidth = parseInt(match[1]);
@@ -856,7 +856,8 @@ export function createSeedWidget(node, param) {
     widget._wavespeed_dynamic = true;
     widget._wavespeed_param = param.name;
     widget._wavespeed_seed = true;
-    
+    widget._wavespeed_label_offset = 24; // Seed widget has label row
+
     // Save seed control state
     widget._seedMode = currentMode;
     widget._seedInput = seedInput;
@@ -990,6 +991,7 @@ export function createPromptWidget(node, param) {
 
     widget._wavespeed_dynamic = true;
     widget._wavespeed_param = param.name;
+    widget._wavespeed_label_offset = 20; // Prompt widget has label row
     // Note: Removed widget.inputEl to unify restoration via restoreValue method
 
     // Custom computeSize
@@ -1283,7 +1285,6 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     previewContainer.style.flexShrink = '0';
 
     let currentPreview = null;
-    let isUploadedFile = false;
 
     const clearPreview = () => {
         if (currentPreview) {
@@ -1291,7 +1292,7 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
             currentPreview = null;
         }
         previewContainer.innerHTML = '';
-        isUploadedFile = false;
+        // Keep both textarea and upload button enabled
         textarea.disabled = false;
         textarea.style.opacity = '1';
         textarea.style.cursor = 'text';
@@ -1328,9 +1329,8 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
                 loadingPreview.remove();
 
                 if (result.success) {
-                    isUploadedFile = true;
+                    // Simply update textarea value - don't lock anything
                     textarea.value = result.url;
-                    lockTextarea();
 
                     node.wavespeedState.parameterValues[param.name] = result.url;
                     updateRequestJson(node);
@@ -1388,8 +1388,6 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     widgetContainer.appendChild(inputRow);
 
     const handleUrlInput = () => {
-        if (isUploadedFile) return;
-
         const urlValue = textarea.value.trim();
         if (currentPreview) {
             currentPreview.remove();
@@ -1398,17 +1396,12 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
 
         if (!urlValue) {
             previewContainer.innerHTML = '';
-            if (uploadBtn) {
-                uploadBtn.disabled = false;
-                uploadBtn.style.opacity = '1';
-                uploadBtn.style.cursor = 'pointer';
-            }
             node.wavespeedState.parameterValues[param.name] = '';
             updateRequestJson(node);
             return;
         }
 
-        lockUploadBtn();
+        // Update parameter value and show preview - don't lock anything
         node.wavespeedState.parameterValues[param.name] = urlValue;
         updateRequestJson(node);
 
@@ -1436,7 +1429,7 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     widget.previewContainer = previewContainer;
     widget._wavespeed_param = param.name;
     widget._wavespeed_dynamic = true;
-    
+
     // Set computeSize - height needs to match actual DOM height for correct slot positioning
     widget.computeSize = function() {
         let height;
@@ -1449,6 +1442,13 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
         }
         return [node.size[0] - 20, height];
     };
+
+    // Set label offset for input slot positioning
+    // For non-array media params with title row, offset by title height (20px)
+    // For array items, no offset needed as they don't have title row
+    if (!param.isExpandedArrayItem) {
+        widget._wavespeed_label_offset = 20;
+    }
 
     // Define value property
     const descriptor = Object.getOwnPropertyDescriptor(widget, 'value');
@@ -1481,7 +1481,7 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     // Add restoreValue method for workflow restoration (unified approach)
     widget.restoreValue = createRestoreValueFn(node, param, function(val) {
         if (typeof val === 'string') {
-            // console.log('[🔍 Media restoreValue]', param.name, '→', val);
+            // Simply restore textarea value and trigger input event
             textarea.value = val;
             textarea.dispatchEvent(new Event('input'));
         }
@@ -1498,12 +1498,37 @@ export function createParameterWidget(node, param) {
     if (param.type === 'ARRAY_TITLE' || param.isArrayTitle) {
         return createArrayTitleWidget(node, param);
     }
-    
-    // Check if size parameter
+
+    // PRIORITY FIX: Check COMBO type first (including size with enum)
+    // This allows size parameters with fixed enum values to use dropdown instead of range widget
+    if (param.type === "COMBO" && param.options && param.options.length > 0) {
+        const widget = node.addWidget("combo", paramName, param.default || param.options[0],
+            (value) => {
+                node.wavespeedState.parameterValues[param.name] = value;
+                updateRequestJson(node);
+            },
+            { values: param.options || [] }
+        );
+
+        widget._wavespeed_dynamic = true;
+        widget._wavespeed_param = param.name;
+
+        // Initialize parameter value
+        const existingValue = node.wavespeedState.parameterValues[param.name];
+        if (existingValue !== undefined) {
+            widget.value = existingValue;
+        } else {
+            node.wavespeedState.parameterValues[param.name] = widget.value !== undefined ? widget.value : (param.default || param.options[0] || "");
+        }
+
+        return widget;
+    }
+
+    // Check if size parameter (only for range-type size, not COMBO)
     if (isSizeParameter(paramName)) {
         return createSizeWidget(node, param);
     }
-    
+
     // Check if parameter is a prompt parameter (needs multiline textarea)
     if (isPromptParameter(paramName) && param.type === "STRING") {
         return createPromptWidget(node, param);
@@ -1527,14 +1552,6 @@ export function createParameterWidget(node, param) {
     } else if (isSeedParam && param.type === "INT") {
         // Seed parameters use special seed widget with fixed/random control
         widget = createSeedWidget(node, param);
-    } else if (param.type === "COMBO") {
-        widget = node.addWidget("combo", widgetName, param.default || param.options[0],
-            (value) => {
-                node.wavespeedState.parameterValues[param.name] = value;
-                updateRequestJson(node);
-            },
-            { values: param.options || [] }
-        );
     } else if (param.type === "INT") {
         const defaultValue = param.default !== undefined ? Math.round(param.default) : 0;
         const min = param.min !== undefined ? param.min : 0;

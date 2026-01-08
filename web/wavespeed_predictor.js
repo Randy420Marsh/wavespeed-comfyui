@@ -812,7 +812,12 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                 // Associate newly created widget
                 input.widget = widget;
                 widget.linkedInput = input;
-                
+
+                // Copy label offset from widget to input for correct slot positioning
+                if (widget._wavespeed_label_offset) {
+                    input._wavespeed_label_offset = widget._wavespeed_label_offset;
+                }
+
             } catch (error) {
                 console.error('[WaveSpeed Predictor] Error creating parameter:', param.name, error);
             }
@@ -1177,6 +1182,16 @@ async function restoreWorkflowData(node, apiModule) {
         // 5.2. Update model selector state after restoring connections
         const inputsModule = await import('./predictor/inputs.js');
         inputsModule.updateModelSelectorByConnectionState(node);
+
+        // 5.3. Update widget editability based on connection state
+        // This ensures that widgets are properly disabled/enabled after workflow restore
+        if (node.inputs) {
+            for (const input of node.inputs) {
+                if (input._wavespeed_dynamic) {
+                    inputsModule.updateSingleMediaWidgetEditability(node, input.name);
+                }
+            }
+        }
 
         // 6. Update node size
         node.setSize(node.computeSize());

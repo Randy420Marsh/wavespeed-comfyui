@@ -122,6 +122,8 @@ export function setupSingleMediaParameters(node, mediaParams) {
                 input._wavespeed_dynamic = true;
                 input._wavespeed_param = paramName;
                 input.label = displayName;
+                // Set label offset for non-array media params (20px for title row)
+                input._wavespeed_label_offset = 20;
             }
 
             // 2. Use common UI creation function
