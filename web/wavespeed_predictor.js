@@ -646,9 +646,22 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         if (!isRestoring && node.inputs) {
             const inputsToKeep = [];
             for (const input of node.inputs) {
-                // Keep non-dynamic inputs (if any exist)
                 if (!input._wavespeed_dynamic) {
+                    // Keep non-dynamic inputs (if any exist)
                     inputsToKeep.push(input);
+                } else {
+                    // CRITICAL FIX: Clear input.widget reference before removing input
+                    // Issue: refreshNodeSlots uses input.widget.name to match widgets
+                    //   - If old input.widget still points to deleted widget, slotMetadata will have wrong keys
+                    //   - This causes wrong widgets to be disabled when connecting slots
+                    // Solution: Clear input.widget and widget.linkedInput before removing input
+                    if (input.widget) {
+                        // Clear bidirectional reference
+                        if (input.widget.linkedInput === input) {
+                            delete input.widget.linkedInput;
+                        }
+                        delete input.widget;
+                    }
                 }
             }
 
@@ -747,6 +760,16 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                     const existingIdx = node.inputs?.findIndex(inp => inp.name === param.name);
                     if (existingIdx >= 0) {
                         input = node.inputs[existingIdx];
+                        // CRITICAL FIX: Clear old input.widget reference if it exists
+                        // Issue: In restore mode, old input.widget may point to deleted widget
+                        //   - This causes refreshNodeSlots to use wrong widget.name for matching
+                        // Solution: Clear old reference before creating new widget
+                        if (input.widget) {
+                            if (input.widget.linkedInput === input) {
+                                delete input.widget.linkedInput;
+                            }
+                            delete input.widget;
+                        }
                     }
                 }
                 
@@ -826,6 +849,87 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         // Update request JSON
         widgetsModule.updateRequestJson(node);
 
+        // CRITICAL FIX: Ensure inputs and widgets arrays are in consistent order
+        // Issue: onNodeRemoved/onNodeAdded may cause Vue to re-extract data in wrong order
+        //   - node.inputs[i] should correspond to node.widgets[j] where input[i].widget === widgets[j]
+        //   - Array titles should be positioned before their corresponding array items
+        // Solution: Reorder widgets array to match inputs array order, preserving array title positions
+        if (node.inputs && node.widgets) {
+            // Build a map of widget name to widget for quick lookup
+            const widgetMap = new Map();
+            for (const widget of node.widgets) {
+                if (widget.name) {
+                    widgetMap.set(widget.name, widget);
+                }
+            }
+            
+            // Build ordered widgets list: match inputs order, insert array titles before their items
+            const orderedWidgets = [];
+            const processedWidgets = new Set();
+            
+            // First pass: Process inputs and their widgets in order
+            for (const input of node.inputs) {
+                if (input._wavespeed_dynamic && input.widget) {
+                    // Check if this is an expanded array item
+                    if (input._wavespeed_expanded_array_item && input._wavespeed_array_index === 0) {
+                        // First item of an array - insert array title before it
+                        const titleWidgetName = `${input._wavespeed_parent_array}_title`;
+                        const titleWidget = widgetMap.get(titleWidgetName);
+                        if (titleWidget && !processedWidgets.has(titleWidget)) {
+                            orderedWidgets.push(titleWidget);
+                            processedWidgets.add(titleWidget);
+                        }
+                    }
+                    
+                    // Add the widget for this input
+                    if (!processedWidgets.has(input.widget)) {
+                        orderedWidgets.push(input.widget);
+                        processedWidgets.add(input.widget);
+                    }
+                }
+            }
+            
+            // Second pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
+            for (const widget of node.widgets) {
+                if (widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
+                    orderedWidgets.push(widget);
+                    processedWidgets.add(widget);
+                }
+            }
+            
+            // Third pass: Build final array preserving non-dynamic widgets at original positions
+            const reorderedWidgets = [];
+            let orderedIndex = 0;
+            
+            for (const widget of node.widgets) {
+                if (widget._wavespeed_dynamic) {
+                    if (orderedIndex < orderedWidgets.length) {
+                        reorderedWidgets.push(orderedWidgets[orderedIndex]);
+                        orderedIndex++;
+                    }
+                } else {
+                    // Keep non-dynamic widgets at their original positions
+                    reorderedWidgets.push(widget);
+                }
+            }
+            
+            // Replace widgets array if order changed
+            let orderChanged = false;
+            if (reorderedWidgets.length === node.widgets.length) {
+                for (let i = 0; i < reorderedWidgets.length; i++) {
+                    if (reorderedWidgets[i] !== node.widgets[i]) {
+                        orderChanged = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (orderChanged) {
+                console.log('[WaveSpeed DEBUG] Reordering widgets array to match inputs order');
+                node.widgets.splice(0, node.widgets.length, ...reorderedWidgets);
+            }
+        }
+
         // CRITICAL FIX: Force Vue to re-extract nodeData after model switch
         // Root cause: refreshNodeSlots (useGraphNodeManager.ts:247-257) breaks reactivity
         //   - It replaces safeWidgets (reactiveComputed) with a plain array
@@ -845,6 +949,86 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                 console.log('[WaveSpeed DEBUG] Simulating node addition...');
                 graph.onNodeAdded(node);
 
+                // Step 3: Re-verify and fix order after Vue re-extraction
+                // Issue: extractVueNodeData may reorder widgets array
+                // Solution: Ensure inputs and widgets order consistency after re-extraction
+                // Array titles should be positioned before their corresponding array items
+                if (node.inputs && node.widgets) {
+                    // Build a map of widget name to widget for quick lookup
+                    const widgetMap = new Map();
+                    for (const widget of node.widgets) {
+                        if (widget.name) {
+                            widgetMap.set(widget.name, widget);
+                        }
+                    }
+                    
+                    // Build ordered widgets list: match inputs order, insert array titles before their items
+                    const orderedWidgets = [];
+                    const processedWidgets = new Set();
+                    
+                    // First pass: Process inputs and their widgets in order
+                    for (const input of node.inputs) {
+                        if (input._wavespeed_dynamic && input.widget) {
+                            // Check if this is an expanded array item
+                            if (input._wavespeed_expanded_array_item && input._wavespeed_array_index === 0) {
+                                // First item of an array - insert array title before it
+                                const titleWidgetName = `${input._wavespeed_parent_array}_title`;
+                                const titleWidget = widgetMap.get(titleWidgetName);
+                                if (titleWidget && !processedWidgets.has(titleWidget)) {
+                                    orderedWidgets.push(titleWidget);
+                                    processedWidgets.add(titleWidget);
+                                }
+                            }
+                            
+                            // Add the widget for this input
+                            if (!processedWidgets.has(input.widget)) {
+                                orderedWidgets.push(input.widget);
+                                processedWidgets.add(input.widget);
+                            }
+                        }
+                    }
+                    
+                    // Second pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
+                    for (const widget of node.widgets) {
+                        if (widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
+                            orderedWidgets.push(widget);
+                            processedWidgets.add(widget);
+                        }
+                    }
+                    
+                    // Third pass: Build final array preserving non-dynamic widgets at original positions
+                    const reorderedWidgets = [];
+                    let orderedIndex = 0;
+                    
+                    for (const widget of node.widgets) {
+                        if (widget._wavespeed_dynamic) {
+                            if (orderedIndex < orderedWidgets.length) {
+                                reorderedWidgets.push(orderedWidgets[orderedIndex]);
+                                orderedIndex++;
+                            }
+                        } else {
+                            // Keep non-dynamic widgets at their original positions
+                            reorderedWidgets.push(widget);
+                        }
+                    }
+                    
+                    // Replace if order changed
+                    let orderChanged = false;
+                    if (reorderedWidgets.length === node.widgets.length) {
+                        for (let i = 0; i < reorderedWidgets.length; i++) {
+                            if (reorderedWidgets[i] !== node.widgets[i]) {
+                                orderChanged = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (orderChanged) {
+                        console.log('[WaveSpeed DEBUG] Reordering widgets after Vue re-extraction');
+                        node.widgets.splice(0, node.widgets.length, ...reorderedWidgets);
+                    }
+                }
+
                 console.log('[WaveSpeed DEBUG] Vue nodeData re-extraction complete');
             } else {
                 console.warn('[WaveSpeed DEBUG] graph.onNodeRemoved/onNodeAdded not available');
@@ -859,6 +1043,56 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                 requestAnimationFrame(resolve);
             });
         });
+
+        // CRITICAL FIX: Mount new widget.element using precise data-widget-name matching
+        // Issue: Previous className-based matching (widgetType) was ambiguous for array items
+        //   - All image_0, image_1, image_2 have widgetType = "media"
+        //   - First matching container would be replaced multiple times
+        // Solution: Use data-widget-name attribute for precise matching
+        const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+        if (nodeElement && node.widgets) {
+            // Only process widgets that have input/textarea (skip array-title, etc.)
+            const inputWidgets = node.widgets.filter(w => {
+                if (!w._wavespeed_dynamic || !w.element || w._wavespeed_array_title || w._wavespeed_no_input) {
+                    return false;
+                }
+                // Check if widget has input/textarea
+                return w.element.querySelector('input, textarea') !== null;
+            });
+            
+            for (const widget of inputWidgets) {
+                // Skip if already in DOM
+                if (widget.element.parentElement !== null) {
+                    continue;
+                }
+                
+                // Get widget name for precise matching
+                const widgetName = widget.name;
+                if (!widgetName) {
+                    console.warn('[WaveSpeed DEBUG] Widget missing name:', widget);
+                    continue;
+                }
+                
+                // Find container by matching data-widget-name attribute
+                const widgetContainers = nodeElement.querySelectorAll('.lg-node-widget');
+                for (const container of widgetContainers) {
+                    const widgetDOMDiv = container.querySelector('.col-span-2');
+                    if (!widgetDOMDiv) continue;
+                    
+                    const domEl = widgetDOMDiv.firstElementChild;
+                    if (!domEl || domEl === widget.element) continue;
+                    
+                    // Match by data-widget-name attribute (precise matching)
+                    const domWidgetName = domEl.getAttribute('data-widget-name');
+                    if (domWidgetName === widgetName) {
+                        // Found exact match, replace old element with new one
+                        console.log('[WaveSpeed DEBUG] Replacing DOM element for widget:', widgetName);
+                        widgetDOMDiv.replaceChildren(widget.element);
+                        break;
+                    }
+                }
+            }
+        }
 
         // Update model selector and category tabs state based on connection status
         const inputsModule = await import('./predictor/inputs.js');

@@ -182,13 +182,16 @@ const SIZE_RATIO_PRESETS = [
 export function createSizeWidget(node, param) {
     const container = document.createElement('div');
     container.className = 'wavespeed-size-selector';
+    container.setAttribute('data-widget-name', param.name); // For precise DOM matching
     
     let isExpanded = false;
     let currentWidth = 1024;
     let currentHeight = 1024;
     let currentRatio = '1:1';
-    const minSize = param.min || 256;
-    const maxSize = param.max || 1536;
+    // CRITICAL FIX: Use API's minimum/maximum constraints, not hardcoded defaults
+    // Use !== undefined check instead of || to handle 0 values correctly
+    const minSize = param.min !== undefined ? param.min : 256;
+    const maxSize = param.max !== undefined ? param.max : 1536;
     
     // Parse default value
     if (param.default) {
@@ -643,15 +646,17 @@ const SEED_MODES = {
 };
 
 // Generate random seed
-function generateRandomSeed() {
-    // Generate a large random integer (0 to 2^32-1)
-    return Math.floor(Math.random() * 4294967295);
+function generateRandomSeed(max = 4294967295) {
+    // Generate a random integer within the specified range (0 to max)
+    // max defaults to 2^32-1 if not provided, but should be set based on model's maximum constraint
+    return Math.floor(Math.random() * (max + 1));
 }
 
 // Create array title widget (only display title, no input slot)
 export function createArrayTitleWidget(node, param) {
     const container = document.createElement('div');
     container.className = 'wavespeed-array-title-widget';
+    container.setAttribute('data-widget-name', param.name); // For precise DOM matching
     container.style.display = 'flex';
     container.style.alignItems = 'center';
     container.style.gap = '2px';
@@ -709,16 +714,24 @@ export function createArrayTitleWidget(node, param) {
 export function createSeedWidget(node, param) {
     const container = document.createElement('div');
     container.className = 'wavespeed-seed-widget';
+    container.setAttribute('data-widget-name', param.name); // For precise DOM matching
     container.style.display = 'flex';
     container.style.flexDirection = 'column';
     container.style.gap = '4px';
     container.style.marginBottom = '4px';
     
     // Current value and mode
-    let currentValue = param.default !== undefined ? Math.round(param.default) : generateRandomSeed();
-    let currentMode = SEED_MODES.FIXED;
     const min = param.min !== undefined ? param.min : 0;
     const max = param.max !== undefined ? param.max : 4294967295;
+    
+    // Ensure default value is within bounds
+    let currentValue;
+    if (param.default !== undefined) {
+        currentValue = Math.max(min, Math.min(max, Math.round(param.default)));
+    } else {
+        currentValue = generateRandomSeed(max);
+    }
+    let currentMode = SEED_MODES.FIXED;
     
     // Label row
     const labelRow = document.createElement('div');
@@ -807,7 +820,7 @@ export function createSeedWidget(node, param) {
         currentMode = modeSelect.value;
         // If switching to random mode, immediately generate new random seed
         if (currentMode === SEED_MODES.RANDOM) {
-            currentValue = generateRandomSeed();
+            currentValue = generateRandomSeed(max);
             seedInput.value = currentValue;
             node.wavespeedState.parameterValues[param.name] = currentValue;
             updateRequestJson(node);
@@ -830,7 +843,7 @@ export function createSeedWidget(node, param) {
     randomBtn.addEventListener('mousedown', (e) => e.stopPropagation());
     randomBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        currentValue = generateRandomSeed();
+        currentValue = generateRandomSeed(max);
         seedInput.value = currentValue;
         node.wavespeedState.parameterValues[param.name] = currentValue;
         updateRequestJson(node);
@@ -905,7 +918,7 @@ export function createSeedWidget(node, param) {
                 currentValue = Math.max(min, currentValue - 1);
                 break;
             case SEED_MODES.RANDOM:
-                currentValue = generateRandomSeed();
+                currentValue = generateRandomSeed(max);
                 break;
             case SEED_MODES.FIXED:
             default:
@@ -939,6 +952,7 @@ export function createSeedWidget(node, param) {
 export function createPromptWidget(node, param) {
     const container = document.createElement('div');
     container.className = 'wavespeed-prompt-widget';
+    container.setAttribute('data-widget-name', param.name); // For precise DOM matching
     container.style.display = 'flex';
     container.style.flexDirection = 'column';
     container.style.gap = '4px';
@@ -1164,11 +1178,12 @@ export function interceptSliderInput(widget, min, max, type, defaultValue) {
             value = Math.round(value * 10) / 10;
         }
 
-        if (value < min) {
+        // Only enforce min/max if they are valid numbers (not Infinity)
+        if (min !== -Infinity && value < min) {
             numberInput.value = min;
             value = min;
         }
-        if (value > max) {
+        if (max !== Infinity && value > max) {
             numberInput.value = max;
             value = max;
         }
@@ -1200,6 +1215,7 @@ export function interceptSliderInput(widget, min, max, type, defaultValue) {
 export function createMediaWidgetUI(node, param, mediaType, displayName, widgetName) {
     const widgetContainer = document.createElement('div');
     widgetContainer.className = 'wavespeed-media-widget';
+    widgetContainer.setAttribute('data-widget-name', param.name); // For precise DOM matching
     widgetContainer.style.display = 'flex';
     widgetContainer.style.flexDirection = 'column'; // Use column layout to support title
     widgetContainer.style.gap = '2px';
@@ -1554,44 +1570,65 @@ export function createParameterWidget(node, param) {
         widget = createSeedWidget(node, param);
     } else if (param.type === "INT") {
         const defaultValue = param.default !== undefined ? Math.round(param.default) : 0;
-        const min = param.min !== undefined ? param.min : 0;
-        const max = param.max !== undefined ? param.max : 999999999;
+        // CRITICAL FIX: Use API's minimum/maximum constraints, not hardcoded defaults
+        // If param.min/max is undefined, use null to indicate no constraint (let API validate)
+        // But widget needs numeric values, so use -Infinity/Infinity for UI, but don't enforce in callback
+        const min = param.min !== undefined ? param.min : null;
+        const max = param.max !== undefined ? param.max : null;
         const useSlider = param.uiComponent === 'slider';
+
+        // Widget requires numeric min/max, use safe defaults for UI
+        const widgetMin = min !== null ? min : -Infinity;
+        const widgetMax = max !== null ? max : Infinity;
 
         widget = node.addWidget(useSlider ? "slider" : "number", widgetName, defaultValue,
             (value) => {
                 value = typeof value === 'string' ? parseInt(value) : Math.round(value);
                 if (isNaN(value)) value = defaultValue;
-                value = Math.max(min, Math.min(max, Math.round(value)));
+                // Only enforce min/max if they are defined from API
+                if (min !== null) value = Math.max(min, value);
+                if (max !== null) value = Math.min(max, value);
+                value = Math.round(value);
                 node.wavespeedState.parameterValues[param.name] = value;
                 updateRequestJson(node);
             },
-            { min: min, max: max, step: 1, precision: 0 }
+            { min: widgetMin, max: widgetMax, step: 1, precision: 0 }
         );
 
         if (useSlider) {
-            interceptSliderInput(widget, min, max, 'INT', defaultValue);
+            // Pass widgetMin/widgetMax (numeric values) to interceptSliderInput
+            interceptSliderInput(widget, widgetMin, widgetMax, 'INT', defaultValue);
         }
     } else if (param.type === "FLOAT") {
         const defaultValue = param.default !== undefined ? param.default : 0.0;
-        const min = param.min !== undefined ? param.min : 0.0;
-        const max = param.max !== undefined ? param.max : 10.0;
+        // CRITICAL FIX: Use API's minimum/maximum constraints, not hardcoded defaults
+        // If param.min/max is undefined, use null to indicate no constraint (let API validate)
+        const min = param.min !== undefined ? param.min : null;
+        const max = param.max !== undefined ? param.max : null;
         const step = param.step !== undefined ? param.step : 0.1;
         const useSlider = param.uiComponent === 'slider';
+
+        // Widget requires numeric min/max, use safe defaults for UI
+        const widgetMin = min !== null ? min : -Infinity;
+        const widgetMax = max !== null ? max : Infinity;
 
         widget = node.addWidget(useSlider ? "slider" : "number", widgetName, defaultValue,
             (value) => {
                 value = typeof value === 'string' ? parseFloat(value) : value;
                 if (isNaN(value)) value = defaultValue;
-                value = Math.max(min, Math.min(max, Math.round(value * 10) / 10));
+                // Only enforce min/max if they are defined from API
+                if (min !== null) value = Math.max(min, value);
+                if (max !== null) value = Math.min(max, value);
+                value = Math.round(value * 10) / 10;
                 node.wavespeedState.parameterValues[param.name] = value;
                 updateRequestJson(node);
             },
-            { min: min, max: max, step: step }
+            { min: widgetMin, max: widgetMax, step: step }
         );
 
         if (useSlider) {
-            interceptSliderInput(widget, min, max, 'FLOAT', defaultValue);
+            // Pass widgetMin/widgetMax (numeric values) to interceptSliderInput
+            interceptSliderInput(widget, widgetMin, widgetMax, 'FLOAT', defaultValue);
         }
     } else if (param.type === "BOOLEAN") {
         widget = node.addWidget("toggle", widgetName, param.default || false,
