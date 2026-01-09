@@ -826,9 +826,48 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         // Update request JSON
         widgetsModule.updateRequestJson(node);
 
+        // CRITICAL FIX: Force Vue to re-extract nodeData after model switch
+        // Root cause: refreshNodeSlots (useGraphNodeManager.ts:247-257) breaks reactivity
+        //   - It replaces safeWidgets (reactiveComputed) with a plain array
+        //   - After that, vueNodeData.widgets won't update when node.widgets changes
+        //   - Vue doesn't know there are new widgets to render
+        // Solution: Simulate node removal and re-addition to trigger extractVueNodeData
+        console.log('[WaveSpeed DEBUG] Forcing Vue to re-extract nodeData...');
+
+        try {
+            const graph = node.graph;
+            if (graph && graph.onNodeRemoved && graph.onNodeAdded) {
+                // Step 1: Trigger node removal (cleans up vueNodeData)
+                console.log('[WaveSpeed DEBUG] Simulating node removal...');
+                graph.onNodeRemoved(node);
+
+                // Step 2: Trigger node addition (re-extracts nodeData with fresh safeWidgets)
+                console.log('[WaveSpeed DEBUG] Simulating node addition...');
+                graph.onNodeAdded(node);
+
+                console.log('[WaveSpeed DEBUG] Vue nodeData re-extraction complete');
+            } else {
+                console.warn('[WaveSpeed DEBUG] graph.onNodeRemoved/onNodeAdded not available');
+            }
+        } catch (error) {
+            console.error('[WaveSpeed DEBUG] Failed to re-extract nodeData:', error);
+        }
+
+        // Wait a bit for Vue to process the changes
+        await new Promise(resolve => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+            });
+        });
+
         // Update model selector and category tabs state based on connection status
         const inputsModule = await import('./predictor/inputs.js');
         inputsModule.updateModelSelectorByConnectionState(node);
+
+        // Force canvas redraw to ensure input slots are rendered
+        if (node.graph) {
+            node.graph.setDirtyCanvas(true, true);
+        }
 
     } catch (error) {
         console.error('[WaveSpeed Predictor] Error loading model parameters:', error);
