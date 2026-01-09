@@ -32,7 +32,7 @@ function formatDuration(seconds) {
 }
 
 // Render function: Video Preview
-function renderVideoPreview(node, videoUrl) {
+function renderVideoPreview(videoUrl) {
     const container = document.createElement('div');
     container.style.width = '100%';
     container.style.padding = '10px';
@@ -98,22 +98,15 @@ function renderVideoPreview(node, videoUrl) {
 
     container.appendChild(video);
 
-    // Add DOM widget
-    const widget = node.addDOMWidget('preview', 'div', container);
-    
-    // Dynamic size calculation
-    const nodeWidth = Math.max(node.size[0], 400);
-    widget.computeSize = () => [nodeWidth - 20, 320];
-
-    // Update node size - use current node width
-    node.size[0] = Math.max(node.size[0], 400);
-    node.size[1] = Math.max(370, node.size[1]);
-
-    node.setDirtyCanvas(true, true);
+    return {
+        element: container,
+        minWidth: 380,
+        height: 320
+    };
 }
 
 // Render function: Image Preview
-function renderImagePreview(node, imageUrl) {
+function renderImagePreview(imageUrl) {
     const container = document.createElement('div');
     container.style.width = '100%';
     container.style.padding = '10px';
@@ -174,22 +167,15 @@ function renderImagePreview(node, imageUrl) {
 
     container.appendChild(img);
 
-    // Add DOM widget
-    const widget = node.addDOMWidget('preview', 'div', container);
-    
-    // Dynamic size calculation
-    const nodeWidth = Math.max(node.size[0], 400);
-    widget.computeSize = () => [nodeWidth - 20, 350];
-
-    // Update node size - use current node width, don't force change
-    node.size[0] = Math.max(node.size[0], 400);
-    node.size[1] = Math.max(400, node.size[1]);
-
-    node.setDirtyCanvas(true, true);
+    return {
+        element: container,
+        minWidth: 380,
+        height: 350
+    };
 }
 
 // Render function: Image Gallery
-function renderImageGallery(node, imageUrls) {
+function renderImageGallery(imageUrls) {
     const container = document.createElement('div');
     container.style.width = '100%';
     container.style.padding = '10px';
@@ -330,22 +316,15 @@ function renderImageGallery(node, imageUrls) {
         container.appendChild(navContainer);
     }
 
-    // Add DOM widget
-    const widget = node.addDOMWidget('preview', 'div', container);
-    
-    // Dynamic size calculation
-    const nodeWidth = Math.max(node.size[0], 400);
-    widget.computeSize = () => [nodeWidth - 20, 420];
-
-    // Update node size
-    node.size[0] = Math.max(node.size[0], 400);
-    node.size[1] = Math.max(470, node.size[1]);
-
-    node.setDirtyCanvas(true, true);
+    return {
+        element: container,
+        minWidth: 380,
+        height: 420
+    };
 }
 
 // Render function: Audio Preview
-function renderAudioPreview(node, audioUrl) {
+function renderAudioPreview(audioUrl) {
     const container = document.createElement('div');
     container.style.width = '100%';
     container.style.padding = '15px';
@@ -454,19 +433,15 @@ function renderAudioPreview(node, audioUrl) {
     playerContainer.appendChild(infoSection);
     container.appendChild(playerContainer);
 
-    // Add DOM widget
-    const widget = node.addDOMWidget('preview', 'div', container);
-    widget.computeSize = () => [600, 200];
-
-    // Update node size
-    node.size[0] = 600;
-    node.size[1] = Math.max(250, 200 + 50);
-
-    node.setDirtyCanvas(true, true);
+    return {
+        element: container,
+        minWidth: 580,
+        height: 200
+    };
 }
 
 // Render function: 3D Model Preview
-function render3DPreview(node, model3dUrl) {
+function render3DPreview(model3dUrl) {
     const container = document.createElement('div');
     container.style.width = '100%';
     container.style.padding = '10px';
@@ -548,14 +523,6 @@ function render3DPreview(node, model3dUrl) {
     viewerContainer.style.position = 'relative';
 
     if (fileExt === 'glb' || fileExt === 'gltf') {
-        const modelViewer = document.createElement('model-viewer');
-        modelViewer.setAttribute('src', model3dUrl);
-        modelViewer.setAttribute('alt', '3D Model');
-        modelViewer.setAttribute('auto-rotate', '');
-        modelViewer.setAttribute('camera-controls', '');
-        modelViewer.setAttribute('shadow-intensity', '1');
-        modelViewer.setAttribute('style', 'width: 100%; height: 100%; background-color: #2a2a2a;');
-
         const loadingText = document.createElement('div');
         loadingText.textContent = 'Loading 3D model...';
         loadingText.style.color = '#888';
@@ -563,24 +530,60 @@ function render3DPreview(node, model3dUrl) {
         loadingText.style.top = '50%';
         loadingText.style.left = '50%';
         loadingText.style.transform = 'translate(-50%, -50%)';
+        loadingText.style.zIndex = '1';
         viewerContainer.appendChild(loadingText);
 
-        modelViewer.addEventListener('load', () => {
-            loadingText.remove();
-        });
+        // CRITICAL FIX: Ensure model-viewer library is loaded before creating element
+        const initModelViewer = () => {
+            console.log('[WaveSpeed Preview 3D] Creating model-viewer element');
 
-        modelViewer.addEventListener('error', (e) => {
-            console.error('[WaveSpeed Preview 3D] Model loading error:', e);
-            loadingText.textContent = 'Error loading 3D model';
-            loadingText.style.color = '#ff6b6b';
-        });
+            const modelViewer = document.createElement('model-viewer');
+            modelViewer.setAttribute('src', model3dUrl);
+            modelViewer.setAttribute('alt', '3D Model');
+            modelViewer.setAttribute('auto-rotate', '');
+            modelViewer.setAttribute('camera-controls', '');
+            modelViewer.setAttribute('shadow-intensity', '1');
+            modelViewer.setAttribute('environment-image', 'neutral');
+            modelViewer.setAttribute('exposure', '1');
+            modelViewer.style.width = '100%';
+            modelViewer.style.height = '100%';
+            modelViewer.style.backgroundColor = '#2a2a2a';
 
-        viewerContainer.appendChild(modelViewer);
+            modelViewer.addEventListener('load', () => {
+                console.log('[WaveSpeed Preview 3D] Model loaded successfully');
+                loadingText.style.display = 'none';
+            });
 
-        if (!window.customElements.get('model-viewer')) {
+            modelViewer.addEventListener('error', (e) => {
+                console.error('[WaveSpeed Preview 3D] Model loading error:', e);
+                loadingText.textContent = 'Error loading 3D model';
+                loadingText.style.color = '#ff6b6b';
+            });
+
+            viewerContainer.appendChild(modelViewer);
+        };
+
+        // Check if model-viewer is already defined
+        if (window.customElements.get('model-viewer')) {
+            console.log('[WaveSpeed Preview 3D] model-viewer already loaded');
+            initModelViewer();
+        } else {
+            console.log('[WaveSpeed Preview 3D] Loading model-viewer library');
             const script = document.createElement('script');
             script.type = 'module';
             script.src = 'https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js';
+            script.onload = () => {
+                console.log('[WaveSpeed Preview 3D] model-viewer library loaded');
+                // Wait a bit for custom element registration
+                setTimeout(() => {
+                    initModelViewer();
+                }, 100);
+            };
+            script.onerror = () => {
+                console.error('[WaveSpeed Preview 3D] Failed to load model-viewer library');
+                loadingText.textContent = 'Failed to load 3D viewer';
+                loadingText.style.color = '#ff6b6b';
+            };
             document.head.appendChild(script);
         }
     } else {
@@ -594,19 +597,15 @@ function render3DPreview(node, model3dUrl) {
 
     container.appendChild(viewerContainer);
 
-    // Add DOM widget
-    const widget = node.addDOMWidget('preview', 'div', container);
-    widget.computeSize = () => [800, 580];
-
-    // Update node size
-    node.size[0] = 800;
-    node.size[1] = Math.max(630, 580 + 50);
-
-    node.setDirtyCanvas(true, true);
+    return {
+        element: container,
+        minWidth: 780,
+        height: 580
+    };
 }
 
 // Render function: Text Preview
-function renderTextPreview(node, textContent) {
+function renderTextPreview(textContent) {
     const container = document.createElement('div');
     container.style.width = '100%';
     container.style.padding = '10px';
@@ -682,19 +681,15 @@ function renderTextPreview(node, textContent) {
     textEl.textContent = textContent;
     container.appendChild(textEl);
 
-    // Add DOM widget
-    const widget = node.addDOMWidget('preview', 'div', container);
-
-    // Calculate height based on content (max 400px)
-    const contentHeight = Math.min(textEl.scrollHeight, 400);
+    // Dynamic size calculation based on content
+    const contentHeight = Math.min(400, textEl.scrollHeight || 100);
     const totalHeight = contentHeight + 60;
-    widget.computeSize = () => [768, totalHeight];
 
-    // Update node size
-    node.size[0] = 768;
-    node.size[1] = Math.max(totalHeight + 50, 200);
-
-    node.setDirtyCanvas(true, true);
+    return {
+        element: container,
+        minWidth: 748,
+        height: totalHeight
+    };
 }
 
 // Main extension registration
@@ -709,97 +704,111 @@ app.registerExtension({
         chainCallback(nodeType.prototype, "onExecuted", function (message) {
             console.log('[WaveSpeed Preview] onExecuted:', message);
 
-            if (!message || !message.media_data || !message.media_data[0]) {
+            if (!message || !message.media_data || !Array.isArray(message.media_data) || message.media_data.length === 0) {
                 console.log('[WaveSpeed Preview] No media data in message');
                 return;
             }
 
-            const mediaData = message.media_data[0];
-            const mediaType = mediaData.type;
+            const mediaDataArray = message.media_data;
+            console.log('[WaveSpeed Preview] Media data array length:', mediaDataArray.length);
 
-            console.log('[WaveSpeed Preview] Media type:', mediaType);
-
-            // Check if we already have a preview widget
-            const existingWidget = this.widgets?.find(w => w.name === 'preview');
-
-            // If widget type matches, try to update instead of recreating
-            if (existingWidget && existingWidget.element) {
-                const container = existingWidget.element;
-
-                // Try to update existing content based on media type
-                if (mediaType === 'image') {
-                    const existingImg = container.querySelector('img');
-                    if (existingImg) {
-                        existingImg.src = mediaData.url;
-                        return; // Content updated, done
-                    }
-                } else if (mediaType === 'video') {
-                    const existingVideo = container.querySelector('video');
-                    if (existingVideo) {
-                        existingVideo.src = mediaData.url;
-                        existingVideo.load(); // Reload video with new source
-                        return; // Content updated, done
-                    }
-                } else if (mediaType === 'audio') {
-                    const existingAudio = container.querySelector('audio');
-                    if (existingAudio) {
-                        existingAudio.src = mediaData.url;
-                        existingAudio.load(); // Reload audio with new source
-                        return; // Content updated, done
-                    }
-                } else if (mediaType === 'text') {
-                    const existingText = container.querySelector('div[style*="pre-wrap"]');
-                    if (existingText) {
-                        existingText.textContent = mediaData.content;
-                        return; // Content updated, done
-                    }
+            // Reuse a single preview widget so Vue keeps the DOM mount stable.
+            if (!this.widgets) {
+                this.widgets = [];
+            }
+            const existingPreview = this.widgets.find(w => w.name === 'preview') || null;
+            if (this.widgets.filter(w => w.name === 'preview').length > 1) {
+                this.widgets = this.widgets.filter(w => w.name !== 'preview');
+                if (existingPreview) {
+                    this.widgets.push(existingPreview);
                 }
-
-                // For other types or if update failed, remove old widget
-                const idx = this.widgets.indexOf(existingWidget);
-                if (idx !== -1) {
-                    this.widgets.splice(idx, 1);
-                }
+                console.log('[WaveSpeed Preview] Collapsed duplicate preview widgets');
             }
 
-            // Render based on media type
-            switch (mediaType) {
-                case 'video':
-                    console.log('[WaveSpeed Preview] Rendering video:', mediaData.url);
-                    renderVideoPreview(this, mediaData.url);
-                    break;
+            // Reset node size before rendering
+            this.size[0] = Math.max(this.size[0], 400);
+            this.size[1] = 100; // Start with minimal height
 
-                case 'image':
-                    console.log('[WaveSpeed Preview] Rendering image:', mediaData.url);
-                    renderImagePreview(this, mediaData.url);
-                    break;
+            const mainContainer = existingPreview?.element || document.createElement('div');
+            mainContainer.style.width = '100%';
+            mainContainer.style.display = 'flex';
+            mainContainer.style.flexDirection = 'column';
+            mainContainer.style.gap = '10px';
+            mainContainer.replaceChildren();
 
-                case 'image_gallery':
-                    console.log('[WaveSpeed Preview] Rendering image gallery:', mediaData.urls.length, 'images');
-                    renderImageGallery(this, mediaData.urls);
-                    break;
+            const previewItems = [];
 
-                case 'audio':
-                    console.log('[WaveSpeed Preview] Rendering audio:', mediaData.url);
-                    renderAudioPreview(this, mediaData.url);
-                    break;
+            // CUMULATIVE DISPLAY: Render ALL media items from the array
+            // For 3D model tasks: first item is image/gallery, second item is 3D model
+            // They will be displayed one after another (stacked vertically)
+            mediaDataArray.forEach((mediaData, index) => {
+                const mediaType = mediaData.type;
+                console.log(`[WaveSpeed Preview] Rendering media item ${index + 1}/${mediaDataArray.length}, type: ${mediaType}`);
 
-                case '3d':
-                    console.log('[WaveSpeed Preview] Rendering 3D model:', mediaData.url);
-                    render3DPreview(this, mediaData.url);
-                    break;
+                let preview;
 
-                case 'text':
-                    console.log('[WaveSpeed Preview] Rendering text:', mediaData.content.length, 'characters');
-                    renderTextPreview(this, mediaData.content);
-                    break;
+                // Render based on media type
+                switch (mediaType) {
+                    case 'video':
+                        console.log('[WaveSpeed Preview] Rendering video:', mediaData.url);
+                        preview = renderVideoPreview(mediaData.url);
+                        break;
 
-                default:
-                    console.warn('[WaveSpeed Preview] Unknown media type:', mediaType);
-                    // Fallback to text
-                    renderTextPreview(this, JSON.stringify(mediaData, null, 2));
-                    break;
+                    case 'image':
+                        console.log('[WaveSpeed Preview] Rendering image:', mediaData.url);
+                        preview = renderImagePreview(mediaData.url);
+                        break;
+
+                    case 'image_gallery':
+                        console.log('[WaveSpeed Preview] Rendering image gallery:', mediaData.urls.length, 'images');
+                        preview = renderImageGallery(mediaData.urls);
+                        break;
+
+                    case 'audio':
+                        console.log('[WaveSpeed Preview] Rendering audio:', mediaData.url);
+                        preview = renderAudioPreview(mediaData.url);
+                        break;
+
+                    case '3d':
+                        console.log('[WaveSpeed Preview] Rendering 3D model:', mediaData.url);
+                        preview = render3DPreview(mediaData.url);
+                        break;
+
+                    case 'text':
+                        console.log('[WaveSpeed Preview] Rendering text:', mediaData.content.length, 'characters');
+                        preview = renderTextPreview(mediaData.content);
+                        break;
+
+                    default:
+                        console.warn('[WaveSpeed Preview] Unknown media type:', mediaType);
+                        // Fallback to text
+                        preview = renderTextPreview(JSON.stringify(mediaData, null, 2));
+                        break;
+                }
+
+                if (preview && preview.element) {
+                    mainContainer.appendChild(preview.element);
+                    previewItems.push(preview);
+                }
+            });
+
+            const widget = existingPreview || this.addDOMWidget('preview', 'div', mainContainer);
+
+            widget.computeSize = (nodeWidth) => {
+                const gapSize = previewItems.length > 1 ? (previewItems.length - 1) * 10 : 0;
+                const totalHeight = 50 + gapSize + previewItems.reduce((sum, item) => sum + item.height, 0);
+                const maxMinWidth = previewItems.reduce((max, item) => Math.max(max, item.minWidth), 400);
+                return [Math.max(nodeWidth - 20, maxMinWidth), totalHeight];
+            };
+
+            if (this.widgets) {
+                const size = widget.computeSize(this.size[0]);
+                this.size[0] = Math.max(this.size[0], size[0] + 20);
+                this.size[1] = size[1];
+                console.log(`[WaveSpeed Preview] Total node size: ${this.size[0]}x${this.size[1]}px (1 widget)`);
             }
+
+            this.setDirtyCanvas(true, true);
         });
     },
 });

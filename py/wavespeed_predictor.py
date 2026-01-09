@@ -558,11 +558,27 @@ class WaveSpeedOutputProcessor:
                     if not text:
                         text = str(output)
 
-        # Only convert to tensor if we have images, otherwise return None
-        image = imageurl2tensor(images) if images else None
+        # CRITICAL FIX: 3D model tasks should NOT convert images to tensor
+        # If model_3d_url exists, this is a 3D model task. Even if it returns preview images,
+        # we should NOT convert them to tensor (they may have different sizes causing stack errors).
+        # Images from 3D model tasks should only be used for UI preview, not tensor conversion.
+        # Only image/video model tasks should convert images to tensor.
+        has_3d_model = bool(model_3d_url)
+        
+        if has_3d_model:
+            print(f"[WaveSpeed OutputProcessor] 3D model detected: {model_3d_url}")
+            print(f"[WaveSpeed OutputProcessor] Skipping image tensor conversion for 3D model task")
+            print(f"[WaveSpeed OutputProcessor] Image URLs (for UI preview only): {images}")
+            # For 3D model tasks: return image URLs but NO tensor conversion
+            image = None
+        else:
+            # For image/video tasks: convert images to tensor as before
+            image = imageurl2tensor(images) if images else None
+            
         if images:
             first_image_url = images[0]
             image_urls = images
+            
         return (task_id, video_url, image, audio_url, text, first_image_url, image_urls, model_3d_url)
 
 
@@ -919,13 +935,19 @@ class WaveSpeedAIPredictor:
     def _select_smart_output(self, raw_outputs):
         """
         Smart output selection based on content type.
-        Priority: Video > Images > Audio > 3D Model > Text
+
+        CRITICAL: For 3D model tasks (outputs contain .obj/.glb/etc.):
+        - Return FULL list (images + 3D models) for Preview node to detect
+        - Preview node will show both image preview + 3D preview (cumulative)
+        - Preview node will NOT convert images to tensor for 3D tasks
+
+        Priority for non-3D tasks: Video > Images > Audio > Text
 
         Args:
             raw_outputs: List of outputs from API
 
         Returns:
-            Single output (anytype): URL string, IMAGE tensor, list of URLs, or text
+            Single output (anytype): URL string, list of URLs, or text
         """
         if not raw_outputs:
             return None
@@ -936,7 +958,17 @@ class WaveSpeedAIPredictor:
             print(f"[WaveSpeed] Output: {output}")
             return output
 
-        # Multiple outputs: prioritize by type
+        # CRITICAL CHECK: If outputs contain 3D model, return FULL list
+        # This allows Preview node to detect it's a 3D task and skip tensor conversion
+        has_3d_model = any(isinstance(o, str) and self._is_3d_model_url(o) for o in raw_outputs)
+
+        if has_3d_model:
+            # 3D model task: return full list (images + 3D models)
+            print(f"[WaveSpeed] Output: 3D model task - returning full list ({len(raw_outputs)} items)")
+            print(f"[WaveSpeed] Items: {raw_outputs}")
+            return raw_outputs
+
+        # Non-3D tasks: prioritize by type
         # Priority 1: Video
         for output in raw_outputs:
             if isinstance(output, str) and self._is_video_url(output):
@@ -955,12 +987,7 @@ class WaveSpeedAIPredictor:
             if isinstance(output, str) and self._is_audio_url(output):
                 return output
 
-        # Priority 4: 3D Model
-        for output in raw_outputs:
-            if isinstance(output, str) and self._is_3d_model_url(output):
-                return output
-
-        # Priority 5: Text or other types
+        # Priority 4: Text or other types
         # Return first non-URL output or first output
         for output in raw_outputs:
             if not isinstance(output, str) or not output.startswith(('http://', 'https://')):
@@ -999,7 +1026,7 @@ class WaveSpeedAIPredictor:
         if not isinstance(url, str):
             return False
         url_lower = url.lower()
-        return any(ext in url_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl'])
+        return any(ext in url_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl', '.usdz', '.dae', '.3ds'])
 
     @classmethod
     def IS_CHANGED(cls, **_):

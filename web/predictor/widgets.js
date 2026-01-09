@@ -710,6 +710,313 @@ export function createArrayTitleWidget(node, param) {
     return widget;
 }
 
+// Create object array item widget (e.g., bbox_condition with height/length/width in one row)
+export function createObjectArrayItemWidget(node, param) {
+    const container = document.createElement('div');
+    container.className = 'wavespeed-object-array-item-widget';
+    container.setAttribute('data-widget-name', param.name);
+    container.style.display = 'flex';
+    container.style.flexDirection = 'row'; // Change to row layout
+    container.style.alignItems = 'center';
+    container.style.gap = '8px';
+    container.style.marginBottom = '0'; // No spacing between rows
+    container.style.marginLeft = '12px';
+
+    // Index label - on the same row as input fields
+    const indexLabel = document.createElement('label');
+    indexLabel.textContent = `[${param.arrayIndex}]`;
+    indexLabel.className = 'wavespeed-array-item-label';
+    indexLabel.style.color = '#888';
+    indexLabel.style.fontSize = '11px';
+    indexLabel.style.minWidth = '24px';
+    indexLabel.style.fontFamily = 'monospace';
+    indexLabel.style.flexShrink = '0';
+    container.appendChild(indexLabel);
+
+    // Input row: all fields in one horizontal row (same row as index)
+    const inputRow = document.createElement('div');
+    inputRow.style.display = 'flex';
+    inputRow.style.alignItems = 'center';
+    inputRow.style.gap = '8px';
+    inputRow.style.flexWrap = 'wrap';
+    inputRow.style.flex = '1';
+
+    const fieldValues = {};
+    const fieldInputs = {};
+
+    // Create input field for each property (height, length, width, etc.)
+    // No column headers - placeholder text in inputs is sufficient
+    
+    // Check if this is a loras object array (has path and scale properties)
+    const isLorasArray = param.parentArrayName === 'loras' && 
+                         param.objectProperties && 
+                         param.objectProperties.includes('path') && 
+                         param.objectProperties.includes('scale');
+    
+    if (param.objectProperties && param.objectProperties.length > 0) {
+        for (const propName of param.objectProperties) {
+            const fieldContainer = document.createElement('div');
+            fieldContainer.style.display = 'flex';
+            fieldContainer.style.flexDirection = 'column';
+            fieldContainer.style.gap = '0';
+            fieldContainer.style.flex = '1';
+            fieldContainer.style.minWidth = '80px';
+            fieldContainer.style.justifyContent = 'flex-start';
+
+            // Special handling for scale property in loras arrays: use slider control
+            if (isLorasArray && propName === 'scale') {
+                const scaleControl = createLoraScaleControl(1.0, (scale) => {
+                    fieldValues[propName] = scale;
+                    updateObjectArrayValue(node, param);
+                });
+                // Set initial value if exists
+                const existingValue = node.wavespeedState.parameterValues[param.name];
+                if (existingValue && typeof existingValue === 'object' && existingValue[propName] !== undefined) {
+                    const scaleValue = parseFloat(existingValue[propName]);
+                    if (!isNaN(scaleValue)) {
+                        scaleControl.querySelector('input[type="range"]').value = scaleValue;
+                        scaleControl.querySelector('input[type="number"]').value = scaleValue.toFixed(1);
+                        fieldValues[propName] = scaleValue;
+                    }
+                } else {
+                    fieldValues[propName] = 1.0;
+                }
+                fieldContainer.appendChild(scaleControl);
+                fieldInputs[propName] = scaleControl;
+            } else {
+                // Regular input field for other properties
+                const fieldInput = document.createElement('input');
+                if (propName === 'scale' && !isLorasArray) {
+                    // For non-loras scale fields, use number input
+                    fieldInput.type = 'number';
+                    fieldInput.step = '0.1';
+                    fieldInput.min = '0';
+                    fieldInput.max = '2';
+                } else {
+                    // For text fields (like path) or other numeric fields
+                    fieldInput.type = propName === 'path' ? 'text' : 'number';
+                }
+                fieldInput.value = '';
+                fieldInput.placeholder = propName;
+                fieldInput.style.padding = '6px 8px';
+                fieldInput.style.backgroundColor = '#2a2a2a';
+                fieldInput.style.color = '#e0e0e0';
+                fieldInput.style.border = '1px solid #444';
+                fieldInput.style.borderRadius = '4px';
+                fieldInput.style.fontSize = '11px';
+                fieldInput.style.height = '32px';
+                fieldInput.style.minHeight = '32px';
+                fieldInput.style.lineHeight = '20px';
+                fieldInput.style.boxSizing = 'border-box';
+                fieldInput.style.width = '100%';
+
+                fieldInput.addEventListener('input', () => {
+                    if (fieldInput.type === 'number') {
+                        const value = parseFloat(fieldInput.value);
+                        fieldValues[propName] = isNaN(value) ? '' : value;
+                    } else {
+                        fieldValues[propName] = fieldInput.value;
+                    }
+                    updateObjectArrayValue(node, param);
+                });
+
+                fieldContainer.appendChild(fieldInput);
+                fieldInputs[propName] = fieldInput;
+                fieldValues[propName] = '';
+            }
+
+            inputRow.appendChild(fieldContainer);
+        }
+    }
+
+    container.appendChild(inputRow);
+
+    // Create widget
+    const widget = node.addDOMWidget(param.name, 'div', container, { serialize: false });
+    widget._wavespeed_dynamic = true;
+    widget._wavespeed_param = param.name;
+    widget._wavespeed_object_array_item = true;
+    widget._fieldInputs = fieldInputs;
+    widget._fieldValues = fieldValues;
+
+    // Define value property (check if already exists to avoid redefinition error)
+    // CRITICAL: DOMWidget may already have a value property that is not configurable
+    // Solution: Always use getValue/setValue methods as fallback, and try to define value property if possible
+    const existingDescriptor = Object.getOwnPropertyDescriptor(widget, 'value');
+    
+    // Always create getValue/setValue methods for reliable access
+    widget.getValue = function() {
+        // Build object value from field values (only include non-empty values)
+        const objectValue = {};
+        for (const propName of Object.keys(fieldValues)) {
+            const value = fieldValues[propName];
+            // For scale control, get value from the number input
+            if (isLorasArray && propName === 'scale' && fieldInputs[propName]) {
+                const scaleControl = fieldInputs[propName];
+                const numberInput = scaleControl.querySelector('input[type="number"]');
+                if (numberInput) {
+                    const scaleValue = parseFloat(numberInput.value);
+                    if (!isNaN(scaleValue)) {
+                        objectValue[propName] = scaleValue;
+                    }
+                }
+            } else if (value !== '' && value !== null && value !== undefined) {
+                objectValue[propName] = value;
+            }
+        }
+        return Object.keys(objectValue).length > 0 ? objectValue : '';
+    };
+    
+    widget.setValue = function(val) {
+        if (val && typeof val === 'object') {
+            for (const propName of Object.keys(fieldValues)) {
+                if (val[propName] !== undefined) {
+                    fieldValues[propName] = val[propName];
+                    if (fieldInputs[propName]) {
+                        // Special handling for scale control in loras arrays
+                        if (isLorasArray && propName === 'scale') {
+                            const scaleControl = fieldInputs[propName];
+                            const slider = scaleControl.querySelector('input[type="range"]');
+                            const numberInput = scaleControl.querySelector('input[type="number"]');
+                            if (slider && numberInput) {
+                                const scaleValue = parseFloat(val[propName]);
+                                if (!isNaN(scaleValue)) {
+                                    slider.value = scaleValue;
+                                    numberInput.value = scaleValue.toFixed(1);
+                                }
+                            }
+                        } else {
+                            // Regular input field
+                            fieldInputs[propName].value = val[propName];
+                        }
+                    }
+                }
+            }
+            // Update parameterValues
+            updateObjectArrayValue(node, param);
+        }
+    };
+    
+    // Try to define value property if possible
+    if (!existingDescriptor || existingDescriptor.configurable) {
+        try {
+            Object.defineProperty(widget, 'value', {
+                get() {
+                    return widget.getValue();
+                },
+                set(val) {
+                    widget.setValue(val);
+                },
+                enumerable: true,
+                configurable: true
+            });
+        } catch (error) {
+            // If defineProperty fails, value access will use getValue/setValue methods
+            console.warn('[WaveSpeed] Could not define value property, using getValue/setValue:', error.message);
+        }
+    }
+    // Note: If value property is not configurable, value access will use getValue/setValue methods (no warning needed)
+
+    // Initialize parameter value
+    const existingValue = node.wavespeedState.parameterValues[param.name];
+    if (existingValue && typeof existingValue === 'object') {
+        // Use setValue method to restore value
+        widget.setValue(existingValue);
+    } else {
+        // Initialize with empty values
+        updateObjectArrayValue(node, param);
+    }
+
+    // Add restoreValue method for workflow restoration
+    widget.restoreValue = createRestoreValueFn(node, param, function(val) {
+        if (val && typeof val === 'object') {
+            // Restore each field value
+            for (const propName of Object.keys(fieldValues)) {
+                if (val[propName] !== undefined) {
+                    fieldValues[propName] = val[propName];
+                    if (fieldInputs[propName]) {
+                        // Special handling for scale control in loras arrays
+                        if (isLorasArray && propName === 'scale') {
+                            const scaleControl = fieldInputs[propName];
+                            const slider = scaleControl.querySelector('input[type="range"]');
+                            const numberInput = scaleControl.querySelector('input[type="number"]');
+                            if (slider && numberInput) {
+                                const scaleValue = parseFloat(val[propName]);
+                                if (!isNaN(scaleValue)) {
+                                    slider.value = scaleValue;
+                                    numberInput.value = scaleValue.toFixed(1);
+                                }
+                            }
+                        } else {
+                            // Regular input field
+                            fieldInputs[propName].value = val[propName];
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Compute size - single row height for object array items (match images array item height)
+    widget.computeSize = function() {
+        // Height matches input field height (32px) with no margin
+        return [node.size[0] - 20, 32];
+    };
+
+    return widget;
+}
+
+// Helper: Update parameter value for object array item
+function updateObjectArrayValue(node, param) {
+    const widget = node.widgets?.find(w => w.name === param.name);
+    if (widget && widget._fieldValues && widget._fieldInputs) {
+        // Build object value from field values
+        const objectValue = {};
+        const isLorasArray = param.parentArrayName === 'loras' && 
+                             param.objectProperties && 
+                             param.objectProperties.includes('path') && 
+                             param.objectProperties.includes('scale');
+        
+        for (const propName of Object.keys(widget._fieldValues)) {
+            let value = widget._fieldValues[propName];
+            
+            // For scale control in loras arrays, get value from the number input
+            if (isLorasArray && propName === 'scale' && widget._fieldInputs[propName]) {
+                const scaleControl = widget._fieldInputs[propName];
+                const numberInput = scaleControl.querySelector('input[type="number"]');
+                if (numberInput) {
+                    const scaleValue = parseFloat(numberInput.value);
+                    if (!isNaN(scaleValue)) {
+                        value = scaleValue;
+                    }
+                }
+            }
+            
+            if (value !== '' && value !== null && value !== undefined) {
+                objectValue[propName] = value;
+            }
+        }
+        
+        // For loras array: only save if path exists and is non-empty (like images array behavior)
+        // For other object arrays: save if any field is non-empty
+        if (isLorasArray) {
+            // Only save if path exists and is non-empty
+            if (objectValue.path && objectValue.path.trim() !== '') {
+                node.wavespeedState.parameterValues[param.name] = objectValue;
+            } else {
+                // If path is empty, don't save the object (even if scale has value)
+                node.wavespeedState.parameterValues[param.name] = '';
+            }
+        } else {
+            // For other object arrays, keep original behavior
+            node.wavespeedState.parameterValues[param.name] = Object.keys(objectValue).length > 0 ? objectValue : '';
+        }
+        
+        // Update request JSON
+        updateRequestJson(node);
+    }
+}
+
 // Create Seed widget (with fixed/random control)
 export function createSeedWidget(node, param) {
     const container = document.createElement('div');
@@ -1058,15 +1365,16 @@ export function createLoraScaleControl(initialScale = 1.0, onChange) {
     const container = document.createElement('div');
     container.style.display = 'flex';
     container.style.alignItems = 'center';
-    container.style.gap = '8px';
+    container.style.gap = '4px'; // Reduced gap to match images array items
     container.style.flex = '1';
+    container.style.height = '32px'; // Match input field height
 
     const label = document.createElement('span');
     label.textContent = 'Scale:';
     label.style.color = '#e0e0e0';
     label.style.fontSize = '11px';
     label.style.whiteSpace = 'nowrap';
-    label.style.minWidth = '40px';
+    label.style.minWidth = '38px';
 
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -1092,14 +1400,17 @@ export function createLoraScaleControl(initialScale = 1.0, onChange) {
     valueInput.step = '0.1';
     valueInput.value = initialScale.toFixed(1);
     valueInput.style.width = '45px';
-    valueInput.style.padding = '2px 4px';
+    valueInput.style.height = '32px';
+    valueInput.style.minHeight = '32px';
+    valueInput.style.padding = '6px 4px';
     valueInput.style.backgroundColor = '#2a2a2a';
     valueInput.style.color = '#e0e0e0';
     valueInput.style.border = '1px solid #444';
-    valueInput.style.borderRadius = '3px';
+    valueInput.style.borderRadius = '4px';
     valueInput.style.fontSize = '11px';
     valueInput.style.textAlign = 'right';
     valueInput.style.fontFamily = 'monospace';
+    valueInput.style.boxSizing = 'border-box';
 
     valueInput.addEventListener('mousedown', (e) => {
         e.stopPropagation();
@@ -1202,8 +1513,9 @@ export function interceptSliderInput(widget, min, max, type, defaultValue) {
             value = Math.round(value * 10) / 10;
         }
 
-        if (value < min) value = min;
-        if (value > max) value = max;
+        // Only enforce min/max if they are valid numbers (not Infinity)
+        if (min !== -Infinity && value < min) value = min;
+        if (max !== Infinity && value > max) value = max;
 
         numberInput.value = type === 'INT' ? value : value.toFixed(1);
         widget.value = value;
@@ -1302,7 +1614,8 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
 
     let currentPreview = null;
 
-    const clearPreview = () => {
+    // clearPreview will be updated after widget is created to use widget.previewContainer
+    let clearPreview = () => {
         if (currentPreview) {
             currentPreview.remove();
             currentPreview = null;
@@ -1334,44 +1647,34 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     };
 
     let uploadBtn = null;
-    if (mediaType !== 'lora') {
-        uploadBtn = createUploadButton(async (file) => {
-            const loadingPreview = createLoadingPreview(file.name);
-            previewContainer.innerHTML = '';
-            previewContainer.appendChild(loadingPreview);
+    // uploadBtn callback will be updated after widget is created to use widget.previewContainer
+    let uploadBtnCallback = async (file) => {
+        const loadingPreview = createLoadingPreview(file.name);
+        previewContainer.innerHTML = '';
+        previewContainer.appendChild(loadingPreview);
 
-            try {
-                const result = await uploadToWaveSpeed(file, 'local_file', file.name);
-                loadingPreview.remove();
+        try {
+            const result = await uploadToWaveSpeed(file, 'local_file', file.name);
+            loadingPreview.remove();
 
-                if (result.success) {
-                    // Simply update textarea value - don't lock anything
-                    textarea.value = result.url;
+            if (result.success) {
+                // Simply update textarea value - don't lock anything
+                textarea.value = result.url;
 
-                    node.wavespeedState.parameterValues[param.name] = result.url;
+                node.wavespeedState.parameterValues[param.name] = result.url;
+                updateRequestJson(node);
+
+                const preview = createFilePreview(result.url, mediaType, () => {
+                    textarea.value = '';
+                    node.wavespeedState.parameterValues[param.name] = '';
                     updateRequestJson(node);
-
-                    const preview = createFilePreview(result.url, mediaType, () => {
-                        textarea.value = '';
-                        node.wavespeedState.parameterValues[param.name] = '';
-                        updateRequestJson(node);
-                        clearPreview();
-                    });
-                    previewContainer.innerHTML = '';
-                    previewContainer.appendChild(preview);
-                    currentPreview = preview;
-                } else {
-                    const errorPreview = createErrorPreview(result.error);
-                    previewContainer.innerHTML = '';
-                    previewContainer.appendChild(errorPreview);
-                    setTimeout(() => {
-                        errorPreview.remove();
-                        clearPreview();
-                    }, 3000);
-                }
-            } catch (error) {
-                loadingPreview.remove();
-                const errorPreview = createErrorPreview(error.message);
+                    clearPreview();
+                });
+                previewContainer.innerHTML = '';
+                previewContainer.appendChild(preview);
+                currentPreview = preview;
+            } else {
+                const errorPreview = createErrorPreview(result.error);
                 previewContainer.innerHTML = '';
                 previewContainer.appendChild(errorPreview);
                 setTimeout(() => {
@@ -1379,7 +1682,20 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
                     clearPreview();
                 }, 3000);
             }
-        }, mediaType);
+        } catch (error) {
+            loadingPreview.remove();
+            const errorPreview = createErrorPreview(error.message);
+            previewContainer.innerHTML = '';
+            previewContainer.appendChild(errorPreview);
+            setTimeout(() => {
+                errorPreview.remove();
+                clearPreview();
+            }, 3000);
+        }
+    };
+    
+    if (mediaType !== 'lora') {
+        uploadBtn = createUploadButton(uploadBtnCallback, mediaType);
     } else {
         const scaleControl = createLoraScaleControl(1.0, (scale) => {
             textarea.dataset.loraScale = scale;
@@ -1403,15 +1719,160 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
 
     widgetContainer.appendChild(inputRow);
 
+    // Create widget (serialize: false to prevent ComfyUI auto-serialization)
+    const existingWidget = node.widgets?.find(w => w.name === widgetName);
+    // console.log('[🔍 Media Before addDOMWidget]', widgetName, '→ existing:', !!existingWidget);
+    const widget = node.addDOMWidget(widgetName, 'div', widgetContainer, { serialize: false });
+    // console.log('[🔍 Media After addDOMWidget]', widgetName, '→ created');
+
+    widget.inputEl = textarea;
+    widget.uploadBtn = uploadBtn;
+    widget.previewContainer = previewContainer; // May be undefined for lora type
+    widget._currentPreview = currentPreview; // Store currentPreview reference
+
+    // Helper: Get current previewContainer from widget (handles DOM replacement)
+    const getCurrentPreviewContainer = () => {
+        // For lora type, no preview container
+        if (mediaType === 'lora') {
+            return null;
+        }
+        
+        let container = widget.previewContainer;
+        if (!container || container.parentElement === null) {
+            // PreviewContainer was removed, re-query from widget.element
+            container = widget.element?.querySelector('.wavespeed-preview-container');
+            if (container) {
+                widget.previewContainer = container;
+            }
+        }
+        return container;
+    };
+
+    // Update clearPreview to use widget.previewContainer
+    clearPreview = () => {
+        if (widget._currentPreview) {
+            widget._currentPreview.remove();
+            widget._currentPreview = null;
+        }
+        const container = getCurrentPreviewContainer();
+        if (container) {
+            container.innerHTML = '';
+        }
+        // Keep both textarea and upload button enabled
+        textarea.disabled = false;
+        textarea.style.opacity = '1';
+        textarea.style.cursor = 'text';
+        if (uploadBtn) {
+            uploadBtn.disabled = false;
+            uploadBtn.style.opacity = '1';
+            uploadBtn.style.cursor = 'pointer';
+        }
+    };
+
+    // Update uploadBtnCallback to use widget.previewContainer
+    if (uploadBtn && mediaType !== 'lora') {
+        // Re-bind fileInput.onchange to use widget.previewContainer
+        const fileInput = uploadBtn.querySelector('input[type="file"]');
+        if (fileInput) {
+            fileInput.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const container = getCurrentPreviewContainer();
+                    if (!container) {
+                        console.warn('[WaveSpeed] PreviewContainer not found for upload');
+                        fileInput.value = '';
+                        return;
+                    }
+
+                    const loadingPreview = createLoadingPreview(file.name);
+                    container.innerHTML = '';
+                    if (loadingPreview && loadingPreview instanceof Node) {
+                        container.appendChild(loadingPreview);
+                    }
+
+                    try {
+                        const result = await uploadToWaveSpeed(file, 'local_file', file.name);
+                        if (loadingPreview && loadingPreview instanceof Node) {
+                            loadingPreview.remove();
+                        }
+
+                        if (result.success) {
+                            textarea.value = result.url;
+                            node.wavespeedState.parameterValues[param.name] = result.url;
+                            updateRequestJson(node);
+
+                            const preview = createFilePreview(result.url, mediaType, () => {
+                                textarea.value = '';
+                                node.wavespeedState.parameterValues[param.name] = '';
+                                updateRequestJson(node);
+                                clearPreview();
+                            });
+                            
+                            if (preview && preview instanceof Node) {
+                                container.innerHTML = '';
+                                container.appendChild(preview);
+                                widget._currentPreview = preview;
+                            }
+                        } else {
+                            const errorPreview = createErrorPreview(result.error);
+                            if (errorPreview && errorPreview instanceof Node) {
+                                container.innerHTML = '';
+                                container.appendChild(errorPreview);
+                                setTimeout(() => {
+                                    errorPreview.remove();
+                                    clearPreview();
+                                }, 3000);
+                            }
+                        }
+                    } catch (error) {
+                        if (loadingPreview && loadingPreview instanceof Node) {
+                            loadingPreview.remove();
+                        }
+                        const errorPreview = createErrorPreview(error.message);
+                        if (errorPreview && errorPreview instanceof Node) {
+                            container.innerHTML = '';
+                            container.appendChild(errorPreview);
+                            setTimeout(() => {
+                                errorPreview.remove();
+                                clearPreview();
+                            }, 3000);
+                        }
+                    }
+                }
+                fileInput.value = '';
+            };
+        }
+    }
+
     const handleUrlInput = () => {
         const urlValue = textarea.value.trim();
-        if (currentPreview) {
-            currentPreview.remove();
-            currentPreview = null;
+
+        // For lora type, no preview container, just update value
+        if (mediaType === 'lora') {
+            node.wavespeedState.parameterValues[param.name] = urlValue;
+            updateRequestJson(node);
+            return;
+        }
+        
+        // CRITICAL FIX: Re-query previewContainer from widget to handle DOM replacement
+        // Issue: After replaceChildren, old previewContainer may be removed from DOM
+        // Solution: Always get current previewContainer from widget.element
+        const currentPreviewContainer = getCurrentPreviewContainer();
+        if (!currentPreviewContainer) {
+            console.warn('[WaveSpeed] PreviewContainer not found for widget:', param.name);
+            // Still update value even if preview container is missing
+            node.wavespeedState.parameterValues[param.name] = urlValue;
+            updateRequestJson(node);
+            return;
+        }
+        
+        if (widget._currentPreview) {
+            widget._currentPreview.remove();
+            widget._currentPreview = null;
         }
 
         if (!urlValue) {
-            previewContainer.innerHTML = '';
+            currentPreviewContainer.innerHTML = '';
             node.wavespeedState.parameterValues[param.name] = '';
             updateRequestJson(node);
             return;
@@ -1425,24 +1886,25 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
             textarea.value = '';
             node.wavespeedState.parameterValues[param.name] = '';
             updateRequestJson(node);
-            clearPreview();
+            // Re-query previewContainer for clearPreview callback
+            const container = getCurrentPreviewContainer();
+            if (container) {
+                container.innerHTML = '';
+                widget._currentPreview = null;
+            }
         });
-        previewContainer.innerHTML = '';
-        previewContainer.appendChild(preview);
-        currentPreview = preview;
+        
+        // Validate preview is a valid DOM node before appending
+        if (preview && preview instanceof Node) {
+            currentPreviewContainer.innerHTML = '';
+            currentPreviewContainer.appendChild(preview);
+            widget._currentPreview = preview;
+        } else {
+            console.error('[WaveSpeed] createFilePreview returned invalid element for:', urlValue, 'mediaType:', mediaType);
+        }
     };
 
     textarea.addEventListener('input', handleUrlInput);
-
-    // Create widget (serialize: false to prevent ComfyUI auto-serialization)
-    const existingWidget = node.widgets?.find(w => w.name === widgetName);
-    // console.log('[🔍 Media Before addDOMWidget]', widgetName, '→ existing:', !!existingWidget);
-    const widget = node.addDOMWidget(widgetName, 'div', widgetContainer, { serialize: false });
-    // console.log('[🔍 Media After addDOMWidget]', widgetName, '→ created');
-
-    widget.inputEl = textarea;
-    widget.uploadBtn = uploadBtn;
-    widget.previewContainer = previewContainer;
     widget._wavespeed_param = param.name;
     widget._wavespeed_dynamic = true;
 
@@ -1513,6 +1975,11 @@ export function createParameterWidget(node, param) {
     // Check if array title (no input slot, only display title)
     if (param.type === 'ARRAY_TITLE' || param.isArrayTitle) {
         return createArrayTitleWidget(node, param);
+    }
+
+    // Check if object array item (e.g., bbox_condition with height/length/width)
+    if (param.type === 'OBJECT_ARRAY_ITEM' || param.isObjectArrayItem) {
+        return createObjectArrayItemWidget(node, param);
     }
 
     // PRIORITY FIX: Check COMBO type first (including size with enum)
@@ -1680,13 +2147,41 @@ export function updateHiddenWidget(node, name, value) {
 // Update request JSON
 export function updateRequestJson(node) {
     const values = {};
-    const parameters = node.wavespeedState.parameters || [];
+    // Use expanded parameters for value collection (includes array items),
+    // but keep original parameters (node.wavespeedState.parameters) for param_map / Python side.
+    const parameters = node.wavespeedState.expandedParams || node.wavespeedState.parameters || [];
+    const objectArrayGroups = {}; // Track object array items by parent array name
 
     for (const param of parameters) {
         const paramName = param.name;
         
-        // Skip array parameters
+        // Skip array parameters (they will be built from expanded items)
         if (param.isArray) {
+            continue;
+        }
+
+        // Check if this is an object array item (e.g., bbox_condition_0)
+        if (param.isObjectArrayItem && param.parentArrayName) {
+            const parentArrayName = param.parentArrayName;
+            if (!objectArrayGroups[parentArrayName]) {
+                objectArrayGroups[parentArrayName] = [];
+            }
+            const itemValue = node.wavespeedState.parameterValues[paramName];
+            if (itemValue && typeof itemValue === 'object' && Object.keys(itemValue).length > 0) {
+                // For loras array: only include items with non-empty path (like images array behavior)
+                // For other object arrays (e.g., bbox_condition): include if any field is non-empty
+                if (parentArrayName === 'loras') {
+                    // Only include if path exists and is non-empty
+                    if (itemValue.path && itemValue.path.trim() !== '') {
+                        const arrayIndex = param.arrayIndex !== undefined ? param.arrayIndex : objectArrayGroups[parentArrayName].length;
+                        objectArrayGroups[parentArrayName][arrayIndex] = itemValue;
+                    }
+                } else {
+                    // For other object arrays, keep original behavior (any field non-empty)
+                    const arrayIndex = param.arrayIndex !== undefined ? param.arrayIndex : objectArrayGroups[parentArrayName].length;
+                    objectArrayGroups[parentArrayName][arrayIndex] = itemValue;
+                }
+            }
             continue;
         }
 
@@ -1702,6 +2197,16 @@ export function updateRequestJson(node) {
             if (node.wavespeedState.parameterValues[paramName] !== undefined) {
                 values[paramName] = node.wavespeedState.parameterValues[paramName];
             }
+        }
+    }
+
+    // Merge object array items into parent array parameters
+    for (const parentArrayName in objectArrayGroups) {
+        const arrayItems = objectArrayGroups[parentArrayName];
+        // Filter out undefined entries and maintain order
+        const validItems = arrayItems.filter(item => item !== undefined && item !== null);
+        if (validItems.length > 0) {
+            values[parentArrayName] = validItems;
         }
     }
 
@@ -1723,9 +2228,10 @@ export function updateRequestJson(node) {
     const jsonString = JSON.stringify(values);
     updateHiddenWidget(node, 'request_json', jsonString);
 
-    // Update parameter mapping
+    // Update parameter mapping (use original schema parameters for Python side)
     const paramTypeMap = {};
-    for (const param of parameters) {
+    const paramTypeSource = node.wavespeedState.parameters || parameters;
+    for (const param of paramTypeSource) {
         let backendType = "string";
         if (param.type === "INT" || param.type === "FLOAT") {
             backendType = "number";

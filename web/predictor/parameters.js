@@ -147,10 +147,18 @@ export function parseModelParameters(inputSchema) {
             param.step = prop.step || (prop.type === 'integer' ? 1 : 0.01);
         }
 
-        // Extract maxItems info
+        // Extract maxItems info and detect object array (e.g., bbox_condition with height/length/width)
         if (prop.type === 'array' || isArrayParameter(propName, prop.type)) {
             const apiMaxItems = prop.maxItems || 5;
             param.maxItems = Math.min(apiMaxItems, 5);
+            
+            // Check if array items are objects (e.g., bbox_condition with height/length/width)
+            if (prop.items && prop.items.type === 'object' && prop.items.properties) {
+                param.isObjectArray = true;
+                param.objectProperties = Object.keys(prop.items.properties);
+                console.log(`[WaveSpeed] Object array parameter "${propName}": properties = ${param.objectProperties.join(', ')}`);
+            }
+            
             console.log(`[WaveSpeed] Array parameter "${propName}": API maxItems = ${prop.maxItems}, Limited to = ${param.maxItems}`);
         }
 

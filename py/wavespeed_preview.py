@@ -78,23 +78,66 @@ class WaveSpeedAIPreview:
                 print("[WaveSpeed Preview] Empty list provided")
                 return result
 
-            # Check if all items are image URLs
-            all_images = all(self._is_image_url(url) for url in url_list)
+            # CRITICAL FIX: Check if list contains 3D model URLs
+            # If 3D model URLs exist, this is a 3D model task output.
+            # 3D model tasks should NOT convert images to tensor, even if they return preview images.
+            # Images from 3D model tasks should only be used for UI preview, not tensor conversion.
+            has_3d_model = any(self._is_3d_model_url(url) for url in url_list)
+            image_urls = [url for url in url_list if self._is_image_url(url)]
+            model_3d_urls = [url for url in url_list if self._is_3d_model_url(url)]
 
-            if all_images and len(url_list) > 1:
-                # Multiple images - show gallery
-                print(f"[WaveSpeed Preview] Detected image gallery: {len(url_list)} images")
-                result["ui"]["media_data"] = [{
-                    "type": "image_gallery",
-                    "urls": url_list
-                }]
-                # Convert to tensor
-                output_tensor = imageurl2tensor(url_list)
+            if has_3d_model:
+                # 3D model task: Separate images and 3D model, do NOT convert images to tensor
+                print(f"[WaveSpeed Preview] 3D model task detected: {len(model_3d_urls)} 3D model(s), {len(image_urls)} preview image(s)")
+                
+                # Prepare UI data for both images and 3D models (they are cumulative)
+                media_data_items = []
+                
+                # Add image previews (if any)
+                if image_urls:
+                    if len(image_urls) > 1:
+                        media_data_items.append({
+                            "type": "image_gallery",
+                            "urls": image_urls
+                        })
+                        print(f"[WaveSpeed Preview] Added image gallery with {len(image_urls)} images (no tensor conversion)")
+                    else:
+                        media_data_items.append({
+                            "type": "image",
+                            "url": image_urls[0]
+                        })
+                        print(f"[WaveSpeed Preview] Added single image preview: {image_urls[0]} (no tensor conversion)")
+                
+                # Add 3D model previews (if any)
+                for model_url in model_3d_urls:
+                    media_data_items.append({
+                        "type": "3d",
+                        "url": model_url
+                    })
+                    print(f"[WaveSpeed Preview] Added 3D model preview: {model_url}")
+                
+                result["ui"]["media_data"] = media_data_items
+                # DO NOT convert images to tensor for 3D model tasks
+                output_tensor = None
             else:
-                # Single item or mixed types - use first item
-                media_input = url_list[0]
-                print(f"[WaveSpeed Preview] Using first item from list: {media_input}")
-                # Continue to URL detection below
+                # Regular image/video task: use existing logic
+                # Check if all items are image URLs
+                all_images = all(self._is_image_url(url) for url in url_list)
+
+                if all_images and len(url_list) > 1:
+                    # Multiple images - show gallery
+                    print(f"[WaveSpeed Preview] Detected image gallery: {len(url_list)} images")
+                    result["ui"]["media_data"] = [{
+                        "type": "image_gallery",
+                        "urls": url_list
+                    }]
+                    # Convert to tensor (only for non-3D tasks)
+                    output_tensor = imageurl2tensor(url_list)
+                else:
+                    # Single item or mixed types - use first item
+                    media_input = url_list[0]
+                    print(f"[WaveSpeed Preview] Using first item from list: {media_input}")
+                    # Continue to URL detection below
 
         # Case 2: String (URL or text)
         if isinstance(media_input, str):
@@ -114,10 +157,19 @@ class WaveSpeedAIPreview:
                 }]
 
                 # Convert to tensor based on media type
-                if media_type == "image":
+                # CRITICAL: 3D model URLs should NOT trigger tensor conversion
+                if media_type == "3d":
+                    # 3D model: return URL only, no tensor conversion
+                    output_tensor = None
+                    print(f"[WaveSpeed Preview] 3D model URL detected, skipping tensor conversion")
+                elif media_type == "image":
+                    # Regular image: convert to tensor (only for non-3D tasks)
                     output_tensor = imageurl2tensor([media_input])
                 elif media_type == "video":
                     output_tensor = self._videourl2tensor(media_input)
+                else:
+                    # Other types (audio, text, etc.): no tensor
+                    output_tensor = None
             else:
                 # Plain text content
                 print(f"[WaveSpeed Preview] Detected text content: {len(media_input)} characters")
@@ -234,7 +286,7 @@ class WaveSpeedAIPreview:
         if not isinstance(url, str):
             return False
         url_lower = url.lower()
-        return any(ext in url_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl', '.dae', '.3ds'])
+        return any(ext in url_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl', '.usdz', '.dae', '.3ds'])
 
     def _videourl2tensor(self, video_url):
         """

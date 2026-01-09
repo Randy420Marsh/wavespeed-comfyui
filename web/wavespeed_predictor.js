@@ -618,8 +618,9 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
             if (isRestoring) {
                 for (const widget of node.widgets) {
                     if (widget._wavespeed_dynamic && widget._wavespeed_param) {
-                        const currentValue = widget.value;
-                        if (currentValue !== undefined) {
+                        // Use getValue method if available (for object array items), otherwise use value property
+                        const currentValue = widget.getValue ? widget.getValue() : widget.value;
+                        if (currentValue !== undefined && currentValue !== null && currentValue !== '') {
                             node.wavespeedState.parameterValues[widget._wavespeed_param] = currentValue;
                         }
                     }
@@ -681,48 +682,96 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
             const isArray = param.isArray || parametersModule.isArrayParameter(param.name, originalType);
 
             if (isArray) {
-                // Expand array parameter to multiple independent parameters
-                const maxItems = Math.min(param.maxItems || 5, 5);
-                const singularName = param.name.endsWith('s') ? param.name.slice(0, -1) : param.name;
-                const mediaType = parametersModule.getMediaType(param.name, originalType);
+                // Check if this is an object array (e.g., bbox_condition with height/length/width)
+                if (param.isObjectArray && param.objectProperties) {
+                    // Object array: create one widget per array item with multiple fields in a row
+                    const maxItems = Math.min(param.maxItems || 5, 5);
+                    const singularName = param.name.endsWith('s') ? param.name.slice(0, -1) : param.name;
 
-                arrayParamGroups[param.name] = {
-                    originalParam: param,
-                    expandedNames: [],
-                    maxItems: maxItems,
-                    mediaType: mediaType
-                };
-
-                // First add a title parameter (no input slot)
-                const titleParam = {
-                    name: `${param.name}_title`,
-                    displayName: param.name,
-                    isArrayTitle: true,
-                    parentArrayName: param.name,
-                    parentRequired: param.required,
-                    parentDescription: param.description,
-                    type: 'ARRAY_TITLE'
-                };
-                expandedParams.push(titleParam);
-
-                for (let i = 0; i < maxItems; i++) {
-                    const expandedName = `${singularName}_${i}`;
-                    const expandedParam = {
-                        ...param,
-                        name: expandedName,
-                        displayName: `${param.displayName || param.name} [${i}]`,
-                        isArray: false,
-                        isExpandedArrayItem: true,
-                        parentArrayName: param.name,
-                        parentRequired: param.required,  // Pass parent parameter required
-                        parentDescription: param.description,  // Pass parent parameter description
-                        arrayIndex: i,
-                        mediaType: mediaType,
-                        type: 'STRING',
-                        default: ''
+                    arrayParamGroups[param.name] = {
+                        originalParam: param,
+                        expandedNames: [],
+                        maxItems: maxItems,
+                        isObjectArray: true,  // Mark as object array
+                        objectProperties: param.objectProperties
                     };
-                    expandedParams.push(expandedParam);
-                    arrayParamGroups[param.name].expandedNames.push(expandedName);
+
+                    // First add a title parameter (no input slot)
+                    const titleParam = {
+                        name: `${param.name}_title`,
+                        displayName: param.name,
+                        isArrayTitle: true,
+                        parentArrayName: param.name,
+                        parentRequired: param.required,
+                        parentDescription: param.description,
+                        type: 'ARRAY_TITLE'
+                    };
+                    expandedParams.push(titleParam);
+
+                    // For object arrays, create one expanded param per array item (will contain multiple fields)
+                    for (let i = 0; i < maxItems; i++) {
+                        const expandedName = `${singularName}_${i}`;
+                        const expandedParam = {
+                            ...param,
+                            name: expandedName,
+                            displayName: `${param.displayName || param.name} [${i}]`,
+                            isArray: false,
+                            isExpandedArrayItem: true,
+                            isObjectArrayItem: true,
+                            parentArrayName: param.name,
+                            parentRequired: param.required,
+                            parentDescription: param.description,
+                            arrayIndex: i,
+                            objectProperties: param.objectProperties,
+                            type: 'OBJECT_ARRAY_ITEM'
+                        };
+                        expandedParams.push(expandedParam);
+                        arrayParamGroups[param.name].expandedNames.push(expandedName);
+                    }
+                } else {
+                    // Regular array: expand to multiple independent parameters
+                    const maxItems = Math.min(param.maxItems || 5, 5);
+                    const singularName = param.name.endsWith('s') ? param.name.slice(0, -1) : param.name;
+                    const mediaType = parametersModule.getMediaType(param.name, originalType);
+
+                    arrayParamGroups[param.name] = {
+                        originalParam: param,
+                        expandedNames: [],
+                        maxItems: maxItems,
+                        mediaType: mediaType
+                    };
+
+                    // First add a title parameter (no input slot)
+                    const titleParam = {
+                        name: `${param.name}_title`,
+                        displayName: param.name,
+                        isArrayTitle: true,
+                        parentArrayName: param.name,
+                        parentRequired: param.required,
+                        parentDescription: param.description,
+                        type: 'ARRAY_TITLE'
+                    };
+                    expandedParams.push(titleParam);
+
+                    for (let i = 0; i < maxItems; i++) {
+                        const expandedName = `${singularName}_${i}`;
+                        const expandedParam = {
+                            ...param,
+                            name: expandedName,
+                            displayName: `${param.displayName || param.name} [${i}]`,
+                            isArray: false,
+                            isExpandedArrayItem: true,
+                            parentArrayName: param.name,
+                            parentRequired: param.required,  // Pass parent parameter required
+                            parentDescription: param.description,  // Pass parent parameter description
+                            arrayIndex: i,
+                            mediaType: mediaType,
+                            type: 'STRING',
+                            default: ''
+                        };
+                        expandedParams.push(expandedParam);
+                        arrayParamGroups[param.name].expandedNames.push(expandedName);
+                    }
                 }
             } else {
                 expandedParams.push(param);
@@ -747,6 +796,19 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                         // CRITICAL FIX: Set all flags explicitly for array title
                         widget._wavespeed_dynamic = true;
                         widget._wavespeed_no_input = true;  // Array title has no input slot
+                        widget._wavespeed_base = false;
+                        widget._wavespeed_hidden = false;
+                    }
+                    continue;
+                }
+
+                // Object array items do not create input slot (they are composite objects)
+                if (param.isObjectArrayItem || param.type === 'OBJECT_ARRAY_ITEM') {
+                    // Only create widget, no input slot
+                    const widget = widgetsModule.createParameterWidget(node, param);
+                    if (widget) {
+                        widget._wavespeed_dynamic = true;
+                        widget._wavespeed_no_input = true;  // Object array item has no input slot
                         widget._wavespeed_base = false;
                         widget._wavespeed_hidden = false;
                     }
@@ -846,6 +908,12 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
             }
         }
 
+        // CRITICAL FIX: Save expandedParams separately for request building,
+        // but keep original parameters for param_map / Python side (array detection).
+        // - node.wavespeedState.parameters: original schema parameters (includes 'images', 'loras' as arrays)
+        // - node.wavespeedState.expandedParams: UI-expanded parameters (image_0, lora_0, bbox_condition_0, etc.)
+        node.wavespeedState.expandedParams = expandedParams;
+
         // Update request JSON
         widgetsModule.updateRequestJson(node);
 
@@ -853,6 +921,7 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         // Issue: onNodeRemoved/onNodeAdded may cause Vue to re-extract data in wrong order
         //   - node.inputs[i] should correspond to node.widgets[j] where input[i].widget === widgets[j]
         //   - Array titles should be positioned before their corresponding array items
+        //   - Object array items (without inputs) should be positioned correctly based on expandedParams order
         // Solution: Reorder widgets array to match inputs array order, preserving array title positions
         if (node.inputs && node.widgets) {
             // Build a map of widget name to widget for quick lookup
@@ -889,7 +958,32 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                 }
             }
             
-            // Second pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
+            // Second pass: Add object array items (they don't have inputs) in order based on arrayParamGroups
+            // Process by arrayParamGroups to maintain correct order
+            if (node._arrayParamGroups) {
+                for (const [arrayName, groupInfo] of Object.entries(node._arrayParamGroups)) {
+                    if (groupInfo.isObjectArray && groupInfo.expandedNames) {
+                        // Insert array title if not already processed
+                        const titleWidgetName = `${arrayName}_title`;
+                        const titleWidget = widgetMap.get(titleWidgetName);
+                        if (titleWidget && !processedWidgets.has(titleWidget)) {
+                            orderedWidgets.push(titleWidget);
+                            processedWidgets.add(titleWidget);
+                        }
+                        
+                        // Add object array items in order
+                        for (const expandedName of groupInfo.expandedNames) {
+                            const widget = widgetMap.get(expandedName);
+                            if (widget && !processedWidgets.has(widget)) {
+                                orderedWidgets.push(widget);
+                                processedWidgets.add(widget);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Third pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
             for (const widget of node.widgets) {
                 if (widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
                     orderedWidgets.push(widget);
@@ -936,11 +1030,132 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         //   - After that, vueNodeData.widgets won't update when node.widgets changes
         //   - Vue doesn't know there are new widgets to render
         // Solution: Simulate node removal and re-addition to trigger extractVueNodeData
+        // NOTE: Do NOT change the overall onNodeRemoved/onNodeAdded logic – only add small safety guards
+        
+        // CRITICAL: Install temporary error handler to catch and suppress PrimeVue transition errors
+        // These errors occur when Vue transition hooks (onOverlayLeave) execute on destroyed components
+        // after onNodeRemoved is called during an active PrimeVue dropdown interaction
+        let transitionErrorHandler = null;
+        const originalErrorHandler = window.onerror;
+        const originalUnhandledRejectionHandler = window.onunhandledrejection;
+        
+        transitionErrorHandler = (event) => {
+            // Check if this is the specific PrimeVue $el error we're trying to prevent
+            if (event.error && event.error.message && 
+                event.error.message.includes("Cannot read properties of null") && 
+                event.error.message.includes("$el")) {
+                // Suppress this specific error - it's harmless (component already destroyed)
+                event.preventDefault();
+                return true;
+            }
+            // Let other errors through
+            if (originalErrorHandler) {
+                return originalErrorHandler.apply(window, arguments);
+            }
+            return false;
+        };
+        
+        window.onerror = transitionErrorHandler;
+        
+        window.addEventListener('unhandledrejection', (event) => {
+            // Also catch promise rejections
+            if (event.reason && event.reason.message && 
+                event.reason.message.includes("Cannot read properties of null") && 
+                event.reason.message.includes("$el")) {
+                event.preventDefault();
+                return;
+            }
+            if (originalUnhandledRejectionHandler) {
+                originalUnhandledRejectionHandler.call(window, event);
+            }
+        });
+        
         console.log('[WaveSpeed DEBUG] Forcing Vue to re-extract nodeData...');
 
         try {
             const graph = node.graph;
             if (graph && graph.onNodeRemoved && graph.onNodeAdded) {
+                // CRITICAL FIX: Close any open PrimeVue overlays and wait for ALL async operations to complete
+                // Root cause: PrimeVue's hide() uses setTimeout(() => _hide(), 0) and Vue transitions are async.
+                // When user clicks an option, hide() is called, which triggers Vue transition leave.
+                // If onNodeRemoved is called before transition completes, onOverlayLeave hook accesses destroyed $refs.
+                // Solution: Blur active elements, force close overlays via DOM manipulation, then wait LONGER
+                // for all setTimeout callbacks and Vue transition hooks (onLeave/onOverlayLeave) to complete.
+                try {
+                    // Step 1: Blur any active element to prevent further interaction
+                    const activeEl = document.activeElement;
+                    if (activeEl && activeEl instanceof HTMLElement) {
+                        activeEl.blur();
+                    }
+
+                    // Step 2: Force close any open PrimeVue overlays by manipulating DOM directly
+                    // This prevents Vue from starting new transitions while we wait
+                    // CRITICAL: Remove overlay DOM elements entirely to prevent transition hooks from accessing destroyed refs
+                    const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+                    if (nodeElement) {
+                        // Find all PrimeVue overlay containers and their transition wrappers
+                        // PrimeVue overlays are typically wrapped in Transition components
+                        const overlayContainers = nodeElement.querySelectorAll('[data-pc-name="autocomplete"], [data-pc-section="root"], [class*="p-connected-overlay"]');
+                        overlayContainers.forEach(container => {
+                            // Find the transition wrapper (usually has 'p-connected-overlay' class or is inside a transition)
+                            let overlayWrapper = container.closest('[class*="p-connected-overlay"], [class*="p-overlay"], [class*="p-autocomplete-panel"]');
+                            if (!overlayWrapper) {
+                                // Look for parent with position:absolute/fixed (typical overlay positioning)
+                                overlayWrapper = container.closest('[style*="position: absolute"], [style*="position: fixed"]');
+                            }
+                            if (!overlayWrapper) {
+                                overlayWrapper = container.parentElement;
+                            }
+                            
+                            if (overlayWrapper && overlayWrapper.parentElement) {
+                                // CRITICAL: Remove the entire overlay DOM element to prevent Vue transition hooks from running
+                                // This ensures onOverlayLeave hook never executes on a destroyed component
+                                try {
+                                    overlayWrapper.parentElement.removeChild(overlayWrapper);
+                                } catch (e) {
+                                    // If removal fails, at least hide it
+                                    if (overlayWrapper.style) {
+                                        overlayWrapper.style.display = 'none';
+                                        overlayWrapper.style.visibility = 'hidden';
+                                        overlayWrapper.style.pointerEvents = 'none';
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    // Step 3: Wait for ALL pending async operations to complete
+                    // PrimeVue hide() uses setTimeout(() => _hide(), 0), so we need at least one setTimeout cycle
+                    // Vue transitions use nextTick, which can take multiple requestAnimationFrame cycles
+                    // Vue transition hooks (onLeave, onOverlayLeave) are also async
+                    // We need to wait long enough for all of these to complete
+                    await new Promise(resolve => {
+                        // First, let all setTimeout(0) callbacks execute
+                        setTimeout(() => {
+                            // Then wait for Vue's nextTick cycle
+                            requestAnimationFrame(() => {
+                                requestAnimationFrame(() => {
+                                    // Additional setTimeout to ensure Vue transition hooks complete
+                                    // Vue transition hooks are scheduled via Promise.then (nextTick)
+                                    // So we need another setTimeout to catch those
+                                    setTimeout(() => {
+                                        // One more requestAnimationFrame for any remaining DOM updates
+                                        requestAnimationFrame(() => {
+                                            // Final timeout to ensure all async operations are done
+                                            // This gives enough time for onOverlayLeave to complete
+                                            setTimeout(resolve, 100);
+                                        });
+                                    }, 50);
+                                });
+                            });
+                        }, 0);
+                    });
+                } catch (e) {
+                    console.warn('[WaveSpeed DEBUG] Failed to close overlays before node removal:', e);
+                    // On error, wait longer to ensure safety
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+
                 // Step 1: Trigger node removal (cleans up vueNodeData)
                 console.log('[WaveSpeed DEBUG] Simulating node removal...');
                 graph.onNodeRemoved(node);
@@ -988,7 +1203,32 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                         }
                     }
                     
-                    // Second pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
+                    // Second pass: Add object array items (they don't have inputs) in order based on arrayParamGroups
+                    // Process by arrayParamGroups to maintain correct order
+                    if (node._arrayParamGroups) {
+                        for (const [arrayName, groupInfo] of Object.entries(node._arrayParamGroups)) {
+                            if (groupInfo.isObjectArray && groupInfo.expandedNames) {
+                                // Insert array title if not already processed
+                                const titleWidgetName = `${arrayName}_title`;
+                                const titleWidget = widgetMap.get(titleWidgetName);
+                                if (titleWidget && !processedWidgets.has(titleWidget)) {
+                                    orderedWidgets.push(titleWidget);
+                                    processedWidgets.add(titleWidget);
+                                }
+                                
+                                // Add object array items in order
+                                for (const expandedName of groupInfo.expandedNames) {
+                                    const widget = widgetMap.get(expandedName);
+                                    if (widget && !processedWidgets.has(widget)) {
+                                        orderedWidgets.push(widget);
+                                        processedWidgets.add(widget);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Third pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
                     for (const widget of node.widgets) {
                         if (widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
                             orderedWidgets.push(widget);
@@ -1035,6 +1275,13 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
             }
         } catch (error) {
             console.error('[WaveSpeed DEBUG] Failed to re-extract nodeData:', error);
+        } finally {
+            // Restore original error handlers
+            if (transitionErrorHandler) {
+                window.onerror = originalErrorHandler;
+                // Note: unhandledrejection listener is global, but removing it is safe
+                // as it only suppresses the specific $el error during node removal
+            }
         }
 
         // Wait a bit for Vue to process the changes
@@ -1431,15 +1678,21 @@ async function restoreWorkflowData(node, apiModule) {
             for (const [paramName, paramValue] of Object.entries(saved.parameterValues)) {
                 // Find and update widget
                 const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
-                if (widget && widget.value !== paramValue) {
-                    // Only update if value is different
-                    if (widget.restoreValue && typeof widget.restoreValue === 'function') {
-                        widget.restoreValue(paramValue);
-                    } else {
-                        try {
-                            widget.value = paramValue;
-                        } catch (e) {
-                            console.warn(`[WaveSpeed Predictor] Could not set value for widget ${paramName}:`, e);
+                if (widget) {
+                    // Get current value (use getValue if available for object array items)
+                    const currentValue = widget.getValue ? widget.getValue() : widget.value;
+                    if (currentValue !== paramValue) {
+                        // Only update if value is different
+                        if (widget.restoreValue && typeof widget.restoreValue === 'function') {
+                            widget.restoreValue(paramValue);
+                        } else if (widget.setValue && typeof widget.setValue === 'function') {
+                            widget.setValue(paramValue);
+                        } else {
+                            try {
+                                widget.value = paramValue;
+                            } catch (e) {
+                                console.warn(`[WaveSpeed Predictor] Could not set value for widget ${paramName}:`, e);
+                            }
                         }
                     }
                 }

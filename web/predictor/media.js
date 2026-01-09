@@ -121,9 +121,37 @@ export function createFilePreview(url, mediaType, onDelete) {
         previewElement.style.justifyContent = 'center';
         previewElement.style.fontSize = '16px';
         previewElement.textContent = '🎵';
+    } else {
+        // Default placeholder for unknown media types (e.g., lora, file)
+        previewElement = document.createElement('div');
+        previewElement.style.width = '40px';
+        previewElement.style.height = '40px';
+        previewElement.style.backgroundColor = '#2a2a2a';
+        previewElement.style.display = 'flex';
+        previewElement.style.alignItems = 'center';
+        previewElement.style.justifyContent = 'center';
+        previewElement.style.fontSize = '16px';
+        previewElement.textContent = '📄';
+        previewElement.title = 'File';
     }
 
-    previewContainer.appendChild(previewElement);
+    // CRITICAL FIX: Ensure previewElement is always a valid DOM node before appending
+    if (previewElement && previewElement instanceof Node) {
+        previewContainer.appendChild(previewElement);
+    } else {
+        console.error('[WaveSpeed] Failed to create previewElement for mediaType:', mediaType);
+        // Create fallback placeholder
+        const fallbackElement = document.createElement('div');
+        fallbackElement.style.width = '40px';
+        fallbackElement.style.height = '40px';
+        fallbackElement.style.backgroundColor = '#2a2a2a';
+        fallbackElement.style.display = 'flex';
+        fallbackElement.style.alignItems = 'center';
+        fallbackElement.style.justifyContent = 'center';
+        fallbackElement.style.fontSize = '16px';
+        fallbackElement.textContent = '📄';
+        previewContainer.appendChild(fallbackElement);
+    }
 
     // Delete button - show on hover
     const deleteBtn = document.createElement('button');
