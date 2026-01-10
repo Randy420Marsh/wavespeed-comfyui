@@ -15,6 +15,9 @@ from PIL import Image
 import tempfile
 import os
 import cv2
+from fractions import Fraction
+from comfy_api.latest._input_impl.video_types import VideoFromComponents
+from comfy_api.latest._util import VideoComponents
 from .wavespeed_api.utils import imageurl2tensor
 
 
@@ -38,8 +41,8 @@ class WaveSpeedAIPreview:
         }
 
     OUTPUT_NODE = True
-    RETURN_TYPES = ("*",)
-    RETURN_NAMES = ("tensor",)
+    RETURN_TYPES = ("IMAGE", "VIDEO")
+    RETURN_NAMES = ("image", "video")
 
     CATEGORY = "WaveSpeedAI"
     FUNCTION = "preview_universal"
@@ -56,7 +59,7 @@ class WaveSpeedAIPreview:
         """
         result = {
             "ui": {},
-            "result": (None,)  # Default: no tensor output
+            "result": (None, None)  # Default: no image/video output
         }
 
         # Handle None or empty input
@@ -67,7 +70,8 @@ class WaveSpeedAIPreview:
         print(f"[WaveSpeed Preview] Input type: {type(media_input).__name__}")
         print(f"[WaveSpeed Preview] Input value: {media_input if not isinstance(media_input, (list, dict)) else f'{type(media_input).__name__}[{len(media_input)}]'}")
 
-        output_tensor = None  # Will hold the output tensor
+        output_image = None  # Will hold IMAGE tensor output
+        output_video = None  # Will hold VIDEO output
 
         # Case 1: List of URLs (multiple images)
         if isinstance(media_input, list):
@@ -118,7 +122,7 @@ class WaveSpeedAIPreview:
                 
                 result["ui"]["media_data"] = media_data_items
                 # DO NOT convert images to tensor for 3D model tasks
-                output_tensor = None
+                output_image = None
             else:
                 # Regular image/video task: use existing logic
                 # Check if all items are image URLs
@@ -132,7 +136,7 @@ class WaveSpeedAIPreview:
                         "urls": url_list
                     }]
                     # Convert to tensor (only for non-3D tasks)
-                    output_tensor = imageurl2tensor(url_list)
+                    output_image = imageurl2tensor(url_list)
                 else:
                     # Single item or mixed types - use first item
                     media_input = url_list[0]
@@ -160,16 +164,16 @@ class WaveSpeedAIPreview:
                 # CRITICAL: 3D model URLs should NOT trigger tensor conversion
                 if media_type == "3d":
                     # 3D model: return URL only, no tensor conversion
-                    output_tensor = None
+                    output_image = None
                     print(f"[WaveSpeed Preview] 3D model URL detected, skipping tensor conversion")
                 elif media_type == "image":
                     # Regular image: convert to tensor (only for non-3D tasks)
-                    output_tensor = imageurl2tensor([media_input])
+                    output_image = imageurl2tensor([media_input])
                 elif media_type == "video":
-                    output_tensor = self._videourl2tensor(media_input)
+                    output_video = self._videourl2video(media_input)
                 else:
                     # Other types (audio, text, etc.): no tensor
-                    output_tensor = None
+                    output_image = None
             else:
                 # Plain text content
                 print(f"[WaveSpeed Preview] Detected text content: {len(media_input)} characters")
@@ -188,7 +192,7 @@ class WaveSpeedAIPreview:
             }]
 
         # Set output tensor
-        result["result"] = (output_tensor,)
+        result["result"] = (output_image, output_video)
 
         return result
 
@@ -288,15 +292,15 @@ class WaveSpeedAIPreview:
         url_lower = url.lower()
         return any(ext in url_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl', '.usdz', '.dae', '.3ds'])
 
-    def _videourl2tensor(self, video_url):
+    def _videourl2video(self, video_url):
         """
-        Convert video URL to tensor
+        Convert video URL to ComfyUI VideoInput
 
         Args:
             video_url: Video URL string
 
         Returns:
-            torch.Tensor: Video tensor in shape (batch, frames, height, width, channels)
+            VideoFromComponents: ComfyUI video input
         """
         try:
             # Download video to temporary file
@@ -336,14 +340,18 @@ class WaveSpeedAIPreview:
 
             print(f"[WaveSpeed Preview] Extracted {len(frames)} frames from video")
 
-            # Convert to tensor: (frames, height, width, channels) -> (batch=1, frames, height, width, channels)
+            # Convert to tensor: (frames, height, width, channels)
             frames_array = np.array(frames, dtype=np.float32) / 255.0
-            video_tensor = torch.from_numpy(frames_array).unsqueeze(0)
-
-            return video_tensor
+            frames_tensor = torch.from_numpy(frames_array)
+            components = VideoComponents(
+                images=frames_tensor,
+                audio=None,
+                frame_rate=Fraction(30)
+            )
+            return VideoFromComponents(components)
 
         except Exception as e:
-            print(f"[WaveSpeed Preview] Failed to convert video URL to tensor: {e}")
+            print(f"[WaveSpeed Preview] Failed to convert video URL to video input: {e}")
             return None
 
     @classmethod
