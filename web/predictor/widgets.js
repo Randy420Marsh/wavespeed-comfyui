@@ -2036,7 +2036,14 @@ export function createParameterWidget(node, param) {
         // Seed parameters use special seed widget with fixed/random control
         widget = createSeedWidget(node, param);
     } else if (param.type === "INT") {
-        const defaultValue = param.default !== undefined ? Math.round(param.default) : 0;
+        let defaultValue;
+        if (param.default !== undefined && param.default !== null && param.default !== '') {
+            defaultValue = Math.round(param.default);
+        } else if (param.min !== undefined && param.min !== null) {
+            defaultValue = Math.round(param.min);
+        } else {
+            defaultValue = 0;
+        }
         // CRITICAL FIX: Use API's minimum/maximum constraints, not hardcoded defaults
         // If param.min/max is undefined, use null to indicate no constraint (let API validate)
         // But widget needs numeric values, so use -Infinity/Infinity for UI, but don't enforce in callback
@@ -2048,6 +2055,8 @@ export function createParameterWidget(node, param) {
         const widgetMin = min !== null ? min : -Infinity;
         const widgetMax = max !== null ? max : Infinity;
 
+        if (min !== null) defaultValue = Math.max(min, defaultValue);
+        if (max !== null) defaultValue = Math.min(max, defaultValue);
         widget = node.addWidget(useSlider ? "slider" : "number", widgetName, defaultValue,
             (value) => {
                 value = typeof value === 'string' ? parseInt(value) : Math.round(value);
@@ -2067,7 +2076,14 @@ export function createParameterWidget(node, param) {
             interceptSliderInput(widget, widgetMin, widgetMax, 'INT', defaultValue);
         }
     } else if (param.type === "FLOAT") {
-        const defaultValue = param.default !== undefined ? param.default : 0.0;
+        let defaultValue;
+        if (param.default !== undefined && param.default !== null && param.default !== '') {
+            defaultValue = param.default;
+        } else if (param.min !== undefined && param.min !== null) {
+            defaultValue = param.min;
+        } else {
+            defaultValue = 0.0;
+        }
         // CRITICAL FIX: Use API's minimum/maximum constraints, not hardcoded defaults
         // If param.min/max is undefined, use null to indicate no constraint (let API validate)
         const min = param.min !== undefined ? param.min : null;
@@ -2079,6 +2095,8 @@ export function createParameterWidget(node, param) {
         const widgetMin = min !== null ? min : -Infinity;
         const widgetMax = max !== null ? max : Infinity;
 
+        if (min !== null) defaultValue = Math.max(min, defaultValue);
+        if (max !== null) defaultValue = Math.min(max, defaultValue);
         widget = node.addWidget(useSlider ? "slider" : "number", widgetName, defaultValue,
             (value) => {
                 value = typeof value === 'string' ? parseFloat(value) : value;
@@ -2217,7 +2235,18 @@ export function updateRequestJson(node) {
         if (param) {
             if (param.type === "INT" || param.type === "FLOAT") {
                 value = typeof value === 'string' ? parseFloat(value) : value;
-                if (isNaN(value)) value = 0;
+                if (isNaN(value)) {
+                    if (param.default !== undefined && param.default !== null && param.default !== '') {
+                        value = typeof param.default === 'string' ? parseFloat(param.default) : param.default;
+                    } else if (param.min !== undefined && param.min !== null) {
+                        value = param.min;
+                    } else {
+                        value = 0;
+                    }
+                }
+                if (param.min !== undefined && param.min !== null) value = Math.max(param.min, value);
+                if (param.max !== undefined && param.max !== null) value = Math.min(param.max, value);
+                if (param.type === "INT") value = Math.round(value);
             } else if (param.type === "BOOLEAN") {
                 value = Boolean(value);
             }

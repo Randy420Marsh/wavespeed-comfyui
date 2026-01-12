@@ -311,13 +311,16 @@ async function createBasicUI(node, apiModule, utilsModule) {
         refreshBtn.className = 'wavespeed-refresh-btn';
         refreshBtn.innerHTML = '🔄';
         refreshBtn.title = 'Refresh models';
-        refreshBtn.style.padding = '2px 6px';
+        refreshBtn.style.padding = '4px 8px';
         refreshBtn.style.backgroundColor = 'transparent';
         refreshBtn.style.color = '#888';
         refreshBtn.style.border = 'none';
         refreshBtn.style.borderRadius = '3px';
         refreshBtn.style.cursor = 'pointer';
-        refreshBtn.style.fontSize = '12px';
+        refreshBtn.style.fontSize = '14px';
+        refreshBtn.style.lineHeight = '1';
+        refreshBtn.style.minWidth = '24px';
+        refreshBtn.style.minHeight = '24px';
 
         refreshBtn.onclick = async () => {
             refreshBtn.disabled = true;
@@ -1629,6 +1632,8 @@ async function restoreWorkflowData(node, apiModule) {
     }
     
     try {
+        const utilsModule = await import('./predictor/utils.js');
+
         // 1. Restore category selection
         if (saved.category && node._categoryTabsWrapper) {
             node.wavespeedState.currentCategory = saved.category;
@@ -1643,6 +1648,9 @@ async function restoreWorkflowData(node, apiModule) {
                 tab.style.borderColor = isActive ? '#4a9eff' : '#444';
             });
         }
+
+        // Ensure model list matches the restored category
+        await utilsModule.filterModels(node);
         
         // 2. Find and set model selector value
         let displayValue = saved.modelId;
@@ -1734,4 +1742,3 @@ async function restoreWorkflowData(node, apiModule) {
         delete node._restoredInputs;
     }
 }
-
