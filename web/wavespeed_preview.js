@@ -700,34 +700,27 @@ app.registerExtension({
             return;
         }
 
-        // Handle onExecuted - Display media when backend returns data
-        chainCallback(nodeType.prototype, "onExecuted", function (message) {
-            console.log('[WaveSpeed Preview] onExecuted:', message);
-
-            if (!message || !message.media_data || !Array.isArray(message.media_data) || message.media_data.length === 0) {
-                console.log('[WaveSpeed Preview] No media data in message');
+        function renderPreviewFromMediaData(node, mediaDataArray) {
+            if (!Array.isArray(mediaDataArray) || mediaDataArray.length === 0) {
                 return;
             }
 
-            const mediaDataArray = message.media_data;
-            console.log('[WaveSpeed Preview] Media data array length:', mediaDataArray.length);
-
             // Reuse a single preview widget so Vue keeps the DOM mount stable.
-            if (!this.widgets) {
-                this.widgets = [];
+            if (!node.widgets) {
+                node.widgets = [];
             }
-            const existingPreview = this.widgets.find(w => w.name === 'preview') || null;
-            if (this.widgets.filter(w => w.name === 'preview').length > 1) {
-                this.widgets = this.widgets.filter(w => w.name !== 'preview');
+            const existingPreview = node.widgets.find(w => w.name === 'preview') || null;
+            if (node.widgets.filter(w => w.name === 'preview').length > 1) {
+                node.widgets = node.widgets.filter(w => w.name !== 'preview');
                 if (existingPreview) {
-                    this.widgets.push(existingPreview);
+                    node.widgets.push(existingPreview);
                 }
                 console.log('[WaveSpeed Preview] Collapsed duplicate preview widgets');
             }
 
             // Reset node size before rendering
-            this.size[0] = Math.max(this.size[0], 400);
-            this.size[1] = 100; // Start with minimal height
+            node.size[0] = Math.max(node.size[0], 400);
+            node.size[1] = 100; // Start with minimal height
 
             const mainContainer = existingPreview?.element || document.createElement('div');
             mainContainer.style.width = '100%';
@@ -792,7 +785,7 @@ app.registerExtension({
                 }
             });
 
-            const widget = existingPreview || this.addDOMWidget('preview', 'div', mainContainer);
+            const widget = existingPreview || node.addDOMWidget('preview', 'div', mainContainer);
 
             widget.computeSize = (nodeWidth) => {
                 const gapSize = previewItems.length > 1 ? (previewItems.length - 1) * 10 : 0;
@@ -801,14 +794,89 @@ app.registerExtension({
                 return [Math.max(nodeWidth - 20, maxMinWidth), totalHeight];
             };
 
-            if (this.widgets) {
-                const size = widget.computeSize(this.size[0]);
-                this.size[0] = Math.max(this.size[0], size[0] + 20);
-                this.size[1] = size[1];
-                console.log(`[WaveSpeed Preview] Total node size: ${this.size[0]}x${this.size[1]}px (1 widget)`);
+            if (node.widgets) {
+                const size = widget.computeSize(node.size[0]);
+                node.size[0] = Math.max(node.size[0], size[0] + 20);
+                node.size[1] = size[1];
+                console.log(`[WaveSpeed Preview] Total node size: ${node.size[0]}x${node.size[1]}px (1 widget)`);
             }
 
-            this.setDirtyCanvas(true, true);
+            // Persist for workflow save
+            widget.value = { media_data: cloneMediaData(mediaDataArray) };
+            widget.serializeValue = () => widget.value;
+            widget.serialize = true;
+
+            node.setDirtyCanvas(true, true);
+        }
+
+        function cloneMediaData(mediaDataArray) {
+            try {
+                return JSON.parse(JSON.stringify(mediaDataArray));
+            } catch (e) {
+                console.warn('[WaveSpeed Preview] Failed to clone media data:', e);
+                return mediaDataArray;
+            }
+        }
+
+        function extractSavedMediaData(info) {
+            if (!info) return null;
+            if (info.wavespeed_preview?.media_data) {
+                return info.wavespeed_preview.media_data;
+            }
+            if (info.widgets_values && typeof info.widgets_values === 'object') {
+                // widgets_values can be array (LiteGraph default) or map (custom)
+                if (Array.isArray(info.widgets_values)) {
+                    for (const value of info.widgets_values) {
+                        if (value?.media_data && Array.isArray(value.media_data)) {
+                            return value.media_data;
+                        }
+                    }
+                } else {
+                    for (const value of Object.values(info.widgets_values)) {
+                        if (value?.media_data && Array.isArray(value.media_data)) {
+                            return value.media_data;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Handle onExecuted - Display media when backend returns data
+        chainCallback(nodeType.prototype, "onExecuted", function (message) {
+            console.log('[WaveSpeed Preview] onExecuted:', message);
+
+            if (!message || !message.media_data || !Array.isArray(message.media_data) || message.media_data.length === 0) {
+                console.log('[WaveSpeed Preview] No media data in message');
+                return;
+            }
+
+            const mediaDataArray = message.media_data;
+            console.log('[WaveSpeed Preview] Media data array length:', mediaDataArray.length);
+
+            renderPreviewFromMediaData(this, mediaDataArray);
+
+            // Persist last preview payload for workflow save/restore
+            this._wavespeedPreviewData = cloneMediaData(mediaDataArray);
+        });
+
+        // Restore preview from saved workflow data
+        chainCallback(nodeType.prototype, "onConfigure", function (info) {
+            const savedMedia = extractSavedMediaData(info);
+            if (savedMedia) {
+                this._wavespeedPreviewData = savedMedia;
+                renderPreviewFromMediaData(this, this._wavespeedPreviewData);
+            }
+        });
+
+        // Save preview data into workflow
+        chainCallback(nodeType.prototype, "onSerialize", function (info) {
+            if (!info) return;
+            if (this._wavespeedPreviewData) {
+                info.wavespeed_preview = {
+                    media_data: this._wavespeedPreviewData
+                };
+            }
         });
     },
 });
