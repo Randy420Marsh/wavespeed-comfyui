@@ -695,7 +695,7 @@ class WaveSpeedAIPredictor:
         }
 
     RETURN_TYPES = (any_typ,)
-    RETURN_NAMES = ("output",)
+    RETURN_NAMES = ("output_url",)
 
     CATEGORY = "WaveSpeedAI"
     FUNCTION = "generate"

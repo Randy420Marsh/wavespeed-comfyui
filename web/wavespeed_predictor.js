@@ -311,16 +311,19 @@ async function createBasicUI(node, apiModule, utilsModule) {
         refreshBtn.className = 'wavespeed-refresh-btn';
         refreshBtn.innerHTML = '🔄';
         refreshBtn.title = 'Refresh models';
-        refreshBtn.style.padding = '4px 8px';
+        refreshBtn.style.padding = '0';
         refreshBtn.style.backgroundColor = 'transparent';
         refreshBtn.style.color = '#888';
         refreshBtn.style.border = 'none';
         refreshBtn.style.borderRadius = '3px';
         refreshBtn.style.cursor = 'pointer';
-        refreshBtn.style.fontSize = '14px';
+        refreshBtn.style.fontSize = '16px';
         refreshBtn.style.lineHeight = '1';
-        refreshBtn.style.minWidth = '24px';
-        refreshBtn.style.minHeight = '24px';
+        refreshBtn.style.width = '18px';
+        refreshBtn.style.height = '18px';
+        refreshBtn.style.display = 'inline-flex';
+        refreshBtn.style.alignItems = 'center';
+        refreshBtn.style.justifyContent = 'center';
 
         refreshBtn.onclick = async () => {
             refreshBtn.disabled = true;

@@ -33,7 +33,7 @@ class WaveSpeedAIPreview:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "media_input": ("*", {
+                "input_url": ("*", {
                     "forceInput": True,
                     "tooltip": "Connect output from WaveSpeed AI Generate node"
                 }),
@@ -47,12 +47,12 @@ class WaveSpeedAIPreview:
     CATEGORY = "WaveSpeedAI"
     FUNCTION = "preview_universal"
 
-    def preview_universal(self, media_input):
+    def preview_universal(self, input_url):
         """
         Universal preview function that auto-detects media type
 
         Args:
-            media_input: Can be URL string, list of URLs, or text content
+            input_url: Can be URL string, list of URLs, or text content
 
         Returns:
             UI message with media data for frontend display + tensor output
@@ -63,20 +63,20 @@ class WaveSpeedAIPreview:
         }
 
         # Handle None or empty input
-        if media_input is None or media_input == '':
+        if input_url is None or input_url == '':
             print("[WaveSpeed Preview] No input provided")
             return result
 
-        print(f"[WaveSpeed Preview] Input type: {type(media_input).__name__}")
-        print(f"[WaveSpeed Preview] Input value: {media_input if not isinstance(media_input, (list, dict)) else f'{type(media_input).__name__}[{len(media_input)}]'}")
+        print(f"[WaveSpeed Preview] Input type: {type(input_url).__name__}")
+        print(f"[WaveSpeed Preview] Input value: {input_url if not isinstance(input_url, (list, dict)) else f'{type(input_url).__name__}[{len(input_url)}]'}")
 
         output_image = None  # Will hold IMAGE tensor output
         output_video = None  # Will hold VIDEO output
 
         # Case 1: List of URLs (multiple images)
-        if isinstance(media_input, list):
+        if isinstance(input_url, list):
             # Filter out non-string items
-            url_list = [item for item in media_input if isinstance(item, str) and item.strip()]
+            url_list = [item for item in input_url if isinstance(item, str) and item.strip()]
 
             if not url_list:
                 print("[WaveSpeed Preview] Empty list provided")
@@ -139,25 +139,25 @@ class WaveSpeedAIPreview:
                     output_image = imageurl2tensor(url_list)
                 else:
                     # Single item or mixed types - use first item
-                    media_input = url_list[0]
-                    print(f"[WaveSpeed Preview] Using first item from list: {media_input}")
+                    input_url = url_list[0]
+                    print(f"[WaveSpeed Preview] Using first item from list: {input_url}")
                     # Continue to URL detection below
 
         # Case 2: String (URL or text)
-        if isinstance(media_input, str):
-            media_input = media_input.strip()
+        if isinstance(input_url, str):
+            input_url = input_url.strip()
 
             # Check if it's a URL
-            if media_input.startswith(('http://', 'https://')):
+            if input_url.startswith(('http://', 'https://')):
                 # Detect media type from URL
-                media_type = self._detect_media_type_from_url(media_input)
+                media_type = self._detect_media_type_from_url(input_url)
 
                 print(f"[WaveSpeed Preview] Detected media type: {media_type}")
-                print(f"[WaveSpeed Preview] URL: {media_input}")
+                print(f"[WaveSpeed Preview] URL: {input_url}")
 
                 result["ui"]["media_data"] = [{
                     "type": media_type,
-                    "url": media_input
+                    "url": input_url
                 }]
 
                 # Convert to tensor based on media type
@@ -168,24 +168,24 @@ class WaveSpeedAIPreview:
                     print(f"[WaveSpeed Preview] 3D model URL detected, skipping tensor conversion")
                 elif media_type == "image":
                     # Regular image: convert to tensor (only for non-3D tasks)
-                    output_image = imageurl2tensor([media_input])
+                    output_image = imageurl2tensor([input_url])
                 elif media_type == "video":
-                    output_video = self._videourl2video(media_input)
+                    output_video = self._videourl2video(input_url)
                 else:
                     # Other types (audio, text, etc.): no tensor
                     output_image = None
             else:
                 # Plain text content
-                print(f"[WaveSpeed Preview] Detected text content: {len(media_input)} characters")
+                print(f"[WaveSpeed Preview] Detected text content: {len(input_url)} characters")
                 result["ui"]["media_data"] = [{
                     "type": "text",
-                    "content": media_input
+                    "content": input_url
                 }]
 
         # Case 3: Other types (convert to text)
-        elif not isinstance(media_input, list):
-            text_content = str(media_input)
-            print(f"[WaveSpeed Preview] Converting to text: {type(media_input).__name__}")
+        elif not isinstance(input_url, list):
+            text_content = str(input_url)
+            print(f"[WaveSpeed Preview] Converting to text: {type(input_url).__name__}")
             result["ui"]["media_data"] = [{
                 "type": "text",
                 "content": text_content

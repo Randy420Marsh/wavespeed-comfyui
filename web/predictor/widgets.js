@@ -322,7 +322,7 @@ export function createSizeWidget(node, param) {
     widthInput.style.border = '1px solid #444';
     widthInput.style.borderRadius = '4px';
     widthInput.style.fontSize = '13px';
-    widthInput.style.fontFamily = 'monospace';
+    widthInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     widthInput.style.textAlign = 'center';
     widthInput.style.boxSizing = 'border-box';
     
@@ -375,7 +375,7 @@ export function createSizeWidget(node, param) {
     heightInput.style.border = '1px solid #444';
     heightInput.style.borderRadius = '4px';
     heightInput.style.fontSize = '13px';
-    heightInput.style.fontFamily = 'monospace';
+    heightInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     heightInput.style.textAlign = 'center';
     heightInput.style.boxSizing = 'border-box';
     
@@ -1073,7 +1073,7 @@ export function createSeedWidget(node, param) {
     seedInput.style.border = '1px solid #444';
     seedInput.style.borderRadius = '4px';
     seedInput.style.fontSize = '13px';
-    seedInput.style.fontFamily = 'monospace';
+    seedInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     seedInput.style.boxSizing = 'border-box';
     
     // Prevent event bubbling
@@ -1409,7 +1409,7 @@ export function createLoraScaleControl(initialScale = 1.0, onChange) {
     valueInput.style.borderRadius = '4px';
     valueInput.style.fontSize = '11px';
     valueInput.style.textAlign = 'right';
-    valueInput.style.fontFamily = 'monospace';
+    valueInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     valueInput.style.boxSizing = 'border-box';
 
     valueInput.addEventListener('mousedown', (e) => {
@@ -1530,10 +1530,12 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     widgetContainer.setAttribute('data-widget-name', param.name); // For precise DOM matching
     widgetContainer.style.display = 'flex';
     widgetContainer.style.flexDirection = 'column'; // Use column layout to support title
+    widgetContainer.style.width = '100%';
     widgetContainer.style.gap = '2px';
     widgetContainer.style.marginBottom = '4px';
     widgetContainer.style.position = 'relative';
     widgetContainer.style.overflow = 'visible';
+    widgetContainer.style.padding = '0';
     
     // If expanded array item, add sub-item styles
     if (param.isExpandedArrayItem) {
@@ -1551,6 +1553,8 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     inputRow.style.alignItems = 'center';
     inputRow.style.gap = '4px';
     inputRow.style.flex = '1';
+    inputRow.style.width = '100%';
+    inputRow.style.padding = '0';
 
     // For non-array media parameters, add title row (with required marker and description tooltip)
     if (!param.isExpandedArrayItem) {
@@ -1558,7 +1562,7 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
         titleRow.className = 'wavespeed-media-title-row';
         titleRow.style.display = 'flex';
         titleRow.style.alignItems = 'center';
-        titleRow.style.marginBottom = '4px';
+        titleRow.style.marginBottom = '2px';
         
         const titleLabel = createLabelWithRequired(displayName, param.required, param.description);
         titleLabel.style.color = '#4a9eff';
@@ -1586,10 +1590,12 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     // console.log('[🔍 Media Create]', param.name, '→ textarea.value:', textarea.value, '| param.default:', param.default);
     textarea.placeholder = param.isExpandedArrayItem ? `Enter ${mediaType}...` : `Enter ${displayName.toLowerCase()}...`;
     textarea.style.flex = '1';
-    textarea.style.minHeight = '32px';
-    textarea.style.height = '32px';
-    textarea.style.maxHeight = '32px';
-    textarea.style.padding = '6px 8px';
+    textarea.style.width = '100%';
+    textarea.style.minWidth = '0';
+    textarea.style.minHeight = '28px';
+    textarea.style.height = '28px';
+    textarea.style.maxHeight = '28px';
+    textarea.style.padding = '5px 10px 3px 10px';
     textarea.style.backgroundColor = '#2a2a2a';
     textarea.style.color = '#e0e0e0';
     textarea.style.border = '1px solid #444';
@@ -1597,9 +1603,9 @@ export function createMediaWidgetUI(node, param, mediaType, displayName, widgetN
     textarea.style.resize = 'none';
     textarea.style.overflow = 'hidden';
     textarea.style.whiteSpace = 'nowrap';
-    textarea.style.fontFamily = 'monospace';
-    textarea.style.fontSize = '11px';
-    textarea.style.lineHeight = '20px';
+    textarea.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    textarea.style.fontSize = '13px';
+    textarea.style.lineHeight = '1.2';
     textarea.style.boxSizing = 'border-box';
     textarea.rows = 1;
 
