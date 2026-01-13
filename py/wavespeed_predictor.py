@@ -116,20 +116,24 @@ def detect_tensor_type(tensor_data):
         return 'image'
 
 
-def upload_tensor_to_wavespeed(tensor_data):
+def upload_tensor_to_wavespeed(tensor_data, force_type=None):
     """
     Upload a tensor (image/video/audio) to WaveSpeed server and return URL
     Uses direct HTTP request to local ComfyUI endpoint
 
     Args:
         tensor_data: Torch tensor or numpy array
+        force_type: Optional override type ("image", "video", "audio")
 
     Returns:
         str: Uploaded file URL
     """
     try:
-        # Detect tensor type
-        tensor_type = detect_tensor_type(tensor_data)
+        # Detect tensor type unless forced
+        if force_type in ("image", "video", "audio"):
+            tensor_type = force_type
+        else:
+            tensor_type = detect_tensor_type(tensor_data)
         print(f"[WaveSpeed] Detected tensor type: {tensor_type}")
 
         # Convert to numpy if needed
@@ -274,48 +278,9 @@ def upload_tensor_to_wavespeed(tensor_data):
 
         buffer.seek(0)
         file_bytes = buffer.read()
-
-        # Get API key
-        api_key = get_api_key_from_config()
-        if not api_key:
-            raise ValueError("No API key configured. Please configure your WaveSpeed API key.")
-
-        # Upload directly to WaveSpeed API (same as backend endpoint)
-        upload_url = "https://api.wavespeed.ai/api/v3/media/upload/binary"
-
-        # Create multipart form data
-        files = {
-            'file': (filename, file_bytes, content_type)
-        }
-        headers = {
-            'Authorization': f'Bearer {api_key}'
-        }
-
-        print(f"[WaveSpeed] Uploading {filename} ({len(file_bytes)} bytes) to {upload_url}")
-
-        response = requests.post(upload_url, files=files, headers=headers, timeout=180)
-        if response.status_code == 200:
-            result = response.json()
-            # WaveSpeed API returns URL directly or in response structure
-            if isinstance(result, str):
-                # Direct URL string
-                uploaded_url = result
-            elif isinstance(result, dict):
-                # Try different response formats
-                uploaded_url = (result.get('download_url') or
-                              result.get('url') or
-                              (result.get('data', {}).get('download_url') if isinstance(result.get('data'), dict) else None) or
-                              (result.get('data', {}).get('url') if isinstance(result.get('data'), dict) else None))
-            else:
-                uploaded_url = None
-
-            if uploaded_url:
-                print(f"[WaveSpeed] Successfully uploaded {tensor_type} tensor: {uploaded_url}")
-                return uploaded_url
-            else:
-                raise ValueError(f"Upload API returned no URL: {result}")
-        else:
-            raise ValueError(f"Upload failed with status {response.status_code}: {response.text}")
+        uploaded_url = upload_bytes_to_wavespeed(file_bytes, filename, content_type)
+        print(f"[WaveSpeed] Successfully uploaded {tensor_type} tensor: {uploaded_url}")
+        return uploaded_url
 
     except Exception as e:
         print(f"[WaveSpeed] Failed to upload tensor: {e}")
@@ -325,6 +290,108 @@ def upload_tensor_to_wavespeed(tensor_data):
 def is_tensor_or_image(value):
     """Check if value is a tensor or numpy array (image data)"""
     return torch.is_tensor(value) or isinstance(value, np.ndarray)
+
+def is_audio_dict(value):
+    """Check if value looks like a ComfyUI AUDIO dict."""
+    return isinstance(value, dict) and "waveform" in value and "sample_rate" in value
+
+def audio_dict_to_wav_bytes(audio_dict):
+    """Convert ComfyUI AUDIO dict to WAV bytes."""
+    waveform = audio_dict.get("waveform")
+    sample_rate = audio_dict.get("sample_rate", 44100)
+    if waveform is None:
+        raise ValueError("Audio input missing waveform")
+
+    if torch.is_tensor(waveform):
+        data_array = waveform.cpu().numpy()
+    else:
+        data_array = np.array(waveform)
+
+    # Expected shapes: [B, C, T] or [C, T] or [T]
+    if data_array.ndim == 3:
+        data_array = data_array[0]
+    elif data_array.ndim > 3:
+        raise ValueError(f"Unsupported audio waveform shape: {data_array.shape}")
+
+    if data_array.ndim == 2:
+        # Heuristic: treat small dimension as channel
+        if data_array.shape[0] <= 8 and data_array.shape[1] > data_array.shape[0]:
+            data_array = np.mean(data_array, axis=0)
+        elif data_array.shape[1] <= 8 and data_array.shape[0] > data_array.shape[1]:
+            data_array = np.mean(data_array.T, axis=0)
+        else:
+            data_array = np.mean(data_array, axis=0)
+
+    if data_array.size == 0:
+        raise ValueError("Audio waveform is empty")
+
+    # Normalize to [-1, 1] if needed
+    max_val = np.max(np.abs(data_array))
+    if max_val > 1.0:
+        data_array = data_array / max_val
+
+    audio_data = (data_array * 32767).astype(np.int16)
+    buffer = io.BytesIO()
+    wavfile.write(buffer, int(sample_rate), audio_data)
+    buffer.seek(0)
+    return buffer.read()
+
+def try_get_vhs_audio_bytes(value, param_name=None):
+    """Attempt to extract WAV bytes from VHS_AUDIO callable."""
+    if not callable(value):
+        return None
+    if isinstance(param_name, str) and "audio" not in param_name.lower():
+        return None
+    try:
+        audio_bytes = value()
+    except Exception:
+        return None
+    if isinstance(audio_bytes, (bytes, bytearray)):
+        return bytes(audio_bytes)
+    return None
+
+def upload_bytes_to_wavespeed(file_bytes, filename, content_type):
+    """Upload raw bytes to WaveSpeed media upload endpoint."""
+    api_key = get_api_key_from_config()
+    if not api_key:
+        raise ValueError("No API key configured. Please configure your WaveSpeed API key.")
+
+    upload_url = "https://api.wavespeed.ai/api/v3/media/upload/binary"
+    files = {
+        'file': (filename, file_bytes, content_type)
+    }
+    headers = {
+        'Authorization': f'Bearer {api_key}'
+    }
+
+    print(f"[WaveSpeed] Uploading {filename} ({len(file_bytes)} bytes) to {upload_url}")
+
+    response = requests.post(upload_url, files=files, headers=headers, timeout=180)
+    if response.status_code != 200:
+        raise ValueError(f"Upload failed with status {response.status_code}: {response.text}")
+
+    result = response.json()
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        uploaded_url = (result.get('download_url') or
+                        result.get('url') or
+                        (result.get('data', {}).get('download_url') if isinstance(result.get('data'), dict) else None) or
+                        (result.get('data', {}).get('url') if isinstance(result.get('data'), dict) else None))
+        if uploaded_url:
+            return uploaded_url
+    raise ValueError(f"Upload API returned no URL: {result}")
+
+def should_force_image_upload(param_name):
+    """Force image upload for image-like params (avoid video mp4 uploads)."""
+    if not isinstance(param_name, str):
+        return False
+    lower = param_name.lower()
+    if "video" in lower or "audio" in lower:
+        return False
+    if "image" in lower or "mask" in lower:
+        return True
+    return False
 
 
 # AnyType class for universal input/output compatibility
@@ -758,6 +825,36 @@ class WaveSpeedAIPredictor:
             print(f"[WaveSpeed Predictor] Step 1.5: Checking for tensor inputs...")
 
             for param_name, param_value in list(kwargs.items()):
+                # Check for ComfyUI AUDIO dicts
+                if is_audio_dict(param_value):
+                    print(f"[WaveSpeed Predictor] ✓ Found AUDIO dict for '{param_name}'")
+                    try:
+                        audio_bytes = audio_dict_to_wav_bytes(param_value)
+                        uploaded_url = upload_bytes_to_wavespeed(audio_bytes, "audio_upload.wav", "audio/wav")
+                        kwargs[param_name] = uploaded_url
+                        request_json_dict[param_name] = uploaded_url
+                        print(f"[WaveSpeed Predictor] ✓ AUDIO uploaded successfully: {uploaded_url}")
+                    except Exception as e:
+                        print(f"[WaveSpeed Predictor] ✗ Failed to upload AUDIO for '{param_name}': {e}")
+                        traceback.print_exc()
+                        raise ValueError(f"Failed to upload AUDIO for '{param_name}': {e}")
+                    continue
+
+                # Check for VHS_AUDIO callable
+                vhs_audio_bytes = try_get_vhs_audio_bytes(param_value, param_name)
+                if vhs_audio_bytes is not None:
+                    print(f"[WaveSpeed Predictor] ✓ Found VHS_AUDIO for '{param_name}'")
+                    try:
+                        uploaded_url = upload_bytes_to_wavespeed(vhs_audio_bytes, "vhs_audio_upload.wav", "audio/wav")
+                        kwargs[param_name] = uploaded_url
+                        request_json_dict[param_name] = uploaded_url
+                        print(f"[WaveSpeed Predictor] ✓ VHS_AUDIO uploaded successfully: {uploaded_url}")
+                    except Exception as e:
+                        print(f"[WaveSpeed Predictor] ✗ Failed to upload VHS_AUDIO for '{param_name}': {e}")
+                        traceback.print_exc()
+                        raise ValueError(f"Failed to upload VHS_AUDIO for '{param_name}': {e}")
+                    continue
+
                 # Check if this value is a tensor (works for image/video/audio tensors)
                 if is_tensor_or_image(param_value):
                     print(f"[WaveSpeed Predictor] ✓ Found tensor for parameter '{param_name}'")
@@ -766,7 +863,8 @@ class WaveSpeedAIPredictor:
 
                     try:
                         print(f"[WaveSpeed Predictor] ✓ Uploading tensor for '{param_name}'...")
-                        uploaded_url = upload_tensor_to_wavespeed(param_value)
+                        force_type = "image" if should_force_image_upload(param_name) else None
+                        uploaded_url = upload_tensor_to_wavespeed(param_value, force_type=force_type)
                         # Update both kwargs and request_json_dict with uploaded URL
                         kwargs[param_name] = uploaded_url
                         request_json_dict[param_name] = uploaded_url
@@ -828,11 +926,35 @@ class WaveSpeedAIPredictor:
                 # Extract values and convert types
                 array_values = []
                 for index, value in array_members:
+                    if is_audio_dict(value):
+                        print(f"[WaveSpeed Predictor] Detected AUDIO input for {singular_prefix}{index}, uploading...")
+                        try:
+                            audio_bytes = audio_dict_to_wav_bytes(value)
+                            uploaded_url = upload_bytes_to_wavespeed(audio_bytes, "audio_upload.wav", "audio/wav")
+                            array_values.append(uploaded_url)
+                            print(f"[WaveSpeed Predictor] AUDIO uploaded successfully: {uploaded_url}")
+                        except Exception as e:
+                            print(f"[WaveSpeed Predictor] Failed to upload AUDIO for {singular_prefix}{index}: {e}")
+                        continue
+
+                    vhs_audio_bytes = try_get_vhs_audio_bytes(value, f"{singular_prefix}{index}")
+                    if vhs_audio_bytes is not None:
+                        print(f"[WaveSpeed Predictor] Detected VHS_AUDIO input for {singular_prefix}{index}, uploading...")
+                        try:
+                            uploaded_url = upload_bytes_to_wavespeed(vhs_audio_bytes, "vhs_audio_upload.wav", "audio/wav")
+                            array_values.append(uploaded_url)
+                            print(f"[WaveSpeed Predictor] VHS_AUDIO uploaded successfully: {uploaded_url}")
+                        except Exception as e:
+                            print(f"[WaveSpeed Predictor] Failed to upload VHS_AUDIO for {singular_prefix}{index}: {e}")
+                        continue
+
                     # Check if value is a tensor (needs upload)
                     if is_tensor_or_image(value):
                         print(f"[WaveSpeed Predictor] Detected tensor input for {singular_prefix}{index}, uploading...")
                         try:
-                            uploaded_url = upload_tensor_to_wavespeed(value)
+                            param_name = f"{singular_prefix}{index}"
+                            force_type = "image" if should_force_image_upload(param_name) else None
+                            uploaded_url = upload_tensor_to_wavespeed(value, force_type=force_type)
                             array_values.append(uploaded_url)
                             print(f"[WaveSpeed Predictor] Tensor uploaded successfully: {uploaded_url}")
                         except Exception as e:
