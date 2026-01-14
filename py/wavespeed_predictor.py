@@ -1010,6 +1010,26 @@ class WaveSpeedAIPredictor:
 
             print(f"[WaveSpeed Predictor] Filtered parameters: {filtered_params}")
 
+            # Validate size parameters: if size_width or size_height exists, both must exist
+            size_params = {}
+            for key in list(filtered_params.keys()):
+                if key.endswith('_width') or key.endswith('_height'):
+                    size_name = key.rsplit('_', 1)[0]
+                    if size_name not in size_params:
+                        size_params[size_name] = {}
+                    component = key.rsplit('_', 1)[1]
+                    size_params[size_name][component] = filtered_params[key]
+            
+            # Check each size parameter
+            for size_name, components in size_params.items():
+                has_width = 'width' in components
+                has_height = 'height' in components
+                
+                if has_width and not has_height:
+                    raise ValueError(f"Size parameter '{size_name}': Width is provided but Height is missing. Please provide both or leave both empty.")
+                elif has_height and not has_width:
+                    raise ValueError(f"Size parameter '{size_name}': Height is provided but Width is missing. Please provide both or leave both empty.")
+
             # Step 2: Submit task to API
             print(f"[WaveSpeed Predictor] Step 2: Submitting task to API")
 

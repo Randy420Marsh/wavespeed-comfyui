@@ -2228,6 +2228,38 @@ export function updateRequestJson(node) {
         }
     }
 
+    // Handle size parameters: merge size_width and size_height into size
+    // If both width and height are empty/undefined, don't include size parameter
+    const sizeParams = {};
+    for (const paramName in values) {
+        const match = paramName.match(/^(.+)_(width|height)$/);
+        if (match) {
+            const sizeName = match[1];
+            const component = match[2];
+            if (!sizeParams[sizeName]) {
+                sizeParams[sizeName] = {};
+            }
+            sizeParams[sizeName][component] = values[paramName];
+        }
+    }
+    
+    // Build size parameters and remove component parameters
+    for (const sizeName in sizeParams) {
+        const width = sizeParams[sizeName].width;
+        const height = sizeParams[sizeName].height;
+        
+        // Remove component parameters from values
+        delete values[`${sizeName}_width`];
+        delete values[`${sizeName}_height`];
+        
+        // Only add size parameter if both width and height have values
+        if (width !== undefined && width !== null && width !== '' &&
+            height !== undefined && height !== null && height !== '') {
+            values[sizeName] = `${width}*${height}`;
+        }
+        // If either is empty, don't include size parameter at all
+    }
+
     // Type conversion
     for (const paramName in values) {
         let value = values[paramName];

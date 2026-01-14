@@ -8,6 +8,7 @@
 import { app } from "../../../scripts/app.js";
 import { FuzzyModelSelector } from "./predictor/FuzzyModelSelector.js";
 import { updateRequestJson } from "./predictor/widgets.js";
+import { createSizeComponentWidget, createRatioButtonsWidget } from "./predictor/sizeComponentWidget.js";
 
 // Register extension
 app.registerExtension({
@@ -149,6 +150,28 @@ app.registerExtension({
                         input.pos[1] = offsetY;
                     }
                 }
+            }
+        };
+        
+        // Also override onDrawForeground to ensure position is applied
+        const originalOnDrawForeground = node.onDrawForeground;
+        node.onDrawForeground = function(ctx) {
+            // Apply label offset BEFORE drawing foreground
+            if (this.inputs && this.widgets) {
+                for (const input of this.inputs) {
+                    if (input.widget && input._wavespeed_label_offset) {
+                        const widgetY = input.widget.y || 0;
+                        const offsetY = widgetY + input._wavespeed_label_offset;
+                        if (!input.pos || !Array.isArray(input.pos)) {
+                            input.pos = [0, 0];
+                        }
+                        input.pos[1] = offsetY;
+                    }
+                }
+            }
+            
+            if (originalOnDrawForeground) {
+                originalOnDrawForeground.call(this, ctx);
             }
         };
 
@@ -782,12 +805,27 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                     }
                 }
             } else if (isSize) {
+                // Size parameter: expand to ratio buttons + width + height
+                console.log('[WaveSpeed Predictor] Expanding size parameter:', param.name);
+                
+                // Create shared state for width/height widgets (for ratio buttons)
+                const sizeSharedState = {
+                    widthWidget: null,
+                    heightWidget: null,
+                    widthInput: null,
+                    heightInput: null,
+                    ratioButtons: [],
+                    ratioContainer: null
+                };
+                
                 sizeParamGroups[param.name] = {
                     originalParam: param,
-                    expandedNames: [param.name],
-                    isSize: true
+                    expandedNames: [`${param.name}_ratios`, `${param.name}_width`, `${param.name}_height`],
+                    isSize: true,
+                    sharedState: sizeSharedState
                 };
 
+                // Add title parameter (like array title)
                 const titleParam = {
                     name: `${param.name}_title`,
                     displayName: param.name,
@@ -798,14 +836,61 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                     type: 'SIZE_TITLE'
                 };
                 expandedParams.push(titleParam);
+                console.log('[WaveSpeed Predictor] Added size title:', titleParam.name);
 
-                const sizeParam = {
-                    ...param,
+                // Add ratio buttons parameter (no input slot)
+                const ratioParam = {
+                    name: `${param.name}_ratios`,
+                    displayName: 'Ratios',
+                    isSizeRatios: true,
                     parentSizeName: param.name,
-                    parentRequired: param.required,
-                    parentDescription: param.description
+                    type: 'SIZE_RATIOS',
+                    sharedState: sizeSharedState
                 };
-                expandedParams.push(sizeParam);
+                expandedParams.push(ratioParam);
+                console.log('[WaveSpeed Predictor] Added ratio buttons:', ratioParam.name);
+
+                // Add width sub-parameter (with size component flag)
+                // If x-hidden, default is empty; otherwise use 1024
+                const widthParam = {
+                    name: `${param.name}_width`,
+                    displayName: 'Width',
+                    type: 'INT',
+                    min: param.min,
+                    max: param.max,
+                    default: param.xHidden ? '' : 1024,
+                    required: param.required,
+                    description: param.description,
+                    isSizeComponent: true,
+                    sizeComponent: 'width',
+                    parentSizeName: param.name,
+                    sizeIndex: 0,
+                    sharedState: sizeSharedState,
+                    xHidden: param.xHidden
+                };
+                expandedParams.push(widthParam);
+                console.log('[WaveSpeed Predictor] Added width param:', widthParam.name, 'xHidden:', param.xHidden);
+
+                // Add height sub-parameter (with size component flag)
+                // If x-hidden, default is empty; otherwise use 1024
+                const heightParam = {
+                    name: `${param.name}_height`,
+                    displayName: 'Height',
+                    type: 'INT',
+                    min: param.min,
+                    max: param.max,
+                    default: param.xHidden ? '' : 1024,
+                    required: param.required,
+                    description: param.description,
+                    isSizeComponent: true,
+                    sizeComponent: 'height',
+                    parentSizeName: param.name,
+                    sizeIndex: 1,
+                    sharedState: sizeSharedState,
+                    xHidden: param.xHidden
+                };
+                expandedParams.push(heightParam);
+                console.log('[WaveSpeed Predictor] Added height param:', heightParam.name, 'xHidden:', param.xHidden);
             } else {
                 expandedParams.push(param);
             }
@@ -848,6 +933,18 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                     continue;
                 }
 
+                // Size ratio buttons do not create input slot
+                if (param.isSizeRatios || param.type === 'SIZE_RATIOS') {
+                    const widget = createRatioButtonsWidget(node, param, param.sharedState);
+                    if (widget) {
+                        widget._wavespeed_dynamic = true;
+                        widget._wavespeed_no_input = true;
+                        widget._wavespeed_base = false;
+                        widget._wavespeed_hidden = false;
+                    }
+                    continue;
+                }
+
                 // Object array items do not create input slot (they are composite objects)
                 if (param.isObjectArrayItem || param.type === 'OBJECT_ARRAY_ITEM') {
                     // Only create widget, no input slot
@@ -881,72 +978,111 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                     }
                 }
 
-                // Special handling for size parameters: create width/height inputs and bind one widget
-                if (parametersModule.isSizeParameter(param.name)) {
-                    let widthInput = node.inputs?.find(inp => inp.name === `${param.name}_width`);
-                    let heightInput = node.inputs?.find(inp => inp.name === `${param.name}_height`);
-                    console.log('[WaveSpeed DEBUG] widthInput:', widthInput);
-                    console.log('[WaveSpeed DEBUG] heightInput:', heightInput);
-                    if (!widthInput) {
-                        widthInput = node.addInput(`${param.name}_width`, 'INT');
-                        if (widthInput) {
-                            widthInput._wavespeed_dynamic = true;
-                            widthInput._wavespeed_param = param.name;
-                            widthInput._wavespeed_size_component = 'width';
-                            widthInput._wavespeed_parent_size = param.name;
-                            widthInput._wavespeed_size_index = 0;
-                            widthInput.label = 'Width';
+                // Size component (width/height) - create input slot and custom size component widget
+                // Similar to array item, each component gets its own widget and input slot
+                if (param.isSizeComponent) {
+                    console.log('[WaveSpeed Predictor] Processing size component:', param.name);
+                    
+                    // STEP 1: Create input slot FIRST
+                    let input = null;
+                    if (isRestoring) {
+                        const existingIdx = node.inputs?.findIndex(inp => inp.name === param.name);
+                        if (existingIdx >= 0) {
+                            input = node.inputs[existingIdx];
+                            console.log('[WaveSpeed Predictor] Reusing existing size component input:', param.name);
+                            // Clear old widget reference
+                            if (input.widget) {
+                                if (input.widget.linkedInput === input) {
+                                    delete input.widget.linkedInput;
+                                }
+                                delete input.widget;
+                            }
                         }
-                    } else {
-                        widthInput._wavespeed_size_component = 'width';
-                        widthInput._wavespeed_parent_size = param.name;
-                        widthInput._wavespeed_size_index = 0;
                     }
-
-                    if (!heightInput) {
-                        heightInput = node.addInput(`${param.name}_height`, 'INT');
-                        if (heightInput) {
-                            heightInput._wavespeed_dynamic = true;
-                            heightInput._wavespeed_param = param.name;
-                            heightInput._wavespeed_size_component = 'height';
-                            heightInput._wavespeed_parent_size = param.name;
-                            heightInput._wavespeed_size_index = 1;
-                            heightInput.label = 'Height';
-                        }
-                    } else {
-                        heightInput._wavespeed_size_component = 'height';
-                        heightInput._wavespeed_parent_size = param.name;
-                        heightInput._wavespeed_size_index = 1;
+                    
+                    if (!input) {
+                        const inputType = 'INT';
+                        input = node.addInput(param.name, inputType);
+                        console.log('[WaveSpeed Predictor] Created new size component input:', param.name);
                     }
-
-                    const widget = widgetsModule.createParameterWidget(node, param);
-                    if (!widget) {
-                        console.warn('[WaveSpeed Predictor] Failed to create size widget for:', param.name);
+                    
+                    if (!input) {
+                        console.warn('[WaveSpeed Predictor] Failed to create input for size component:', param.name);
                         continue;
                     }
-
+                    
+                    // Set input properties
+                    input._wavespeed_dynamic = true;
+                    input._wavespeed_param = param.name;
+                    input._wavespeed_size_component = param.sizeComponent;
+                    input._wavespeed_parent_size = param.parentSizeName;
+                    input._wavespeed_size_index = param.sizeIndex;
+                    
+                    // STEP 2: Create custom size component widget (with ratio buttons for width)
+                    const widget = createSizeComponentWidget(node, param, param.sharedState);
+                    
+                    if (!widget) {
+                        console.warn('[WaveSpeed Predictor] Failed to create widget for size component:', param.name);
+                        continue;
+                    }
+                    
+                    // Set widget properties
                     widget._wavespeed_dynamic = true;
+                    widget._wavespeed_param = param.name;
+                    widget._wavespeed_size_component = param.sizeComponent;
+                    widget._wavespeed_parent_size = param.parentSizeName;
                     widget._wavespeed_no_input = false;
                     widget._wavespeed_base = false;
                     widget._wavespeed_hidden = false;
-
-                    if (widthInput) {
-                        widthInput.widget = widget;
-                        if (widget._wavespeed_label_offset) {
-                            widthInput._wavespeed_label_offset = widget._wavespeed_label_offset;
-                        }
+                    
+                    // STEP 3: Link input and widget
+                    input.widget = widget;
+                    widget.linkedInput = input;
+                    
+                    // Copy label offset from widget to input for correct slot positioning
+                    if (widget._wavespeed_label_offset) {
+                        input._wavespeed_label_offset = widget._wavespeed_label_offset;
+                        console.log('[WaveSpeed] Copied label offset to input:', param.name, input._wavespeed_label_offset);
+                        
+                        // Try to set position immediately
+                        // This might work better than waiting for onDrawBackground
+                        setTimeout(() => {
+                            if (input.widget && input.widget.y !== undefined) {
+                                const widgetY = input.widget.y;
+                                const offsetY = widgetY + input._wavespeed_label_offset;
+                                if (!input.pos || !Array.isArray(input.pos)) {
+                                    input.pos = [0, 0];
+                                }
+                                input.pos[1] = offsetY;
+                                console.log('[WaveSpeed] Set input position immediately:', {
+                                    name: input.name,
+                                    widgetY: widgetY,
+                                    offset: input._wavespeed_label_offset,
+                                    finalY: offsetY
+                                });
+                                // Force node to redraw
+                                node.setDirtyCanvas(true, true);
+                            }
+                        }, 100);
                     }
-                    if (heightInput) {
-                        heightInput.widget = widget;
-                        if (widget._wavespeed_label_offset) {
-                            heightInput._wavespeed_label_offset = widget._wavespeed_label_offset;
+                    
+                    console.log('[WaveSpeed Predictor] Created size component widget and linked:', param.name);
+                    
+                    // Initialize value (handle both value property and getValue/setValue methods)
+                    const existingValue = node.wavespeedState.parameterValues[param.name];
+                    if (existingValue !== undefined) {
+                        if (widget.setValue) {
+                            widget.setValue(existingValue);
+                        } else {
+                            widget.value = existingValue;
                         }
+                    } else {
+                        const currentValue = widget.getValue ? widget.getValue() : widget.value;
+                        node.wavespeedState.parameterValues[param.name] = currentValue;
                     }
-
-                    widget.linkedInput = widthInput || heightInput || null;
+                    
                     continue;
                 }
-                
                 // If not exists, create new input slot
                 if (!input) {
                     const inputType = '*'; // Use wildcard type to accept any connection
@@ -1031,11 +1167,8 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
 
         // CRITICAL FIX: Ensure inputs and widgets arrays are in consistent order
         // Issue: onNodeRemoved/onNodeAdded may cause Vue to re-extract data in wrong order
-        //   - node.inputs[i] should correspond to node.widgets[j] where input[i].widget === widgets[j]
-        //   - Array titles should be positioned before their corresponding array items
-        //   - Object array items (without inputs) should be positioned correctly based on expandedParams order
-        // Solution: Reorder widgets array to match inputs array order, preserving array title positions
-        if (node.inputs && node.widgets) {
+        // Solution: Reorder widgets array to match expandedParams order
+        if (node.widgets && node.wavespeedState.expandedParams) {
             // Build a map of widget name to widget for quick lookup
             const widgetMap = new Map();
             for (const widget of node.widgets) {
@@ -1044,66 +1177,20 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                 }
             }
             
-            // Build ordered widgets list: match inputs order, insert array titles before their items
+            // Build ordered widgets list based on expandedParams order
             const orderedWidgets = [];
             const processedWidgets = new Set();
             
-            // First pass: Process inputs and their widgets in order
-            for (const input of node.inputs) {
-                if (input._wavespeed_dynamic && input.widget) {
-                    if (input._wavespeed_size_component && input._wavespeed_size_index === 0) {
-                        const titleWidgetName = `${input._wavespeed_parent_size}_title`;
-                        const titleWidget = widgetMap.get(titleWidgetName);
-                        if (titleWidget && !processedWidgets.has(titleWidget)) {
-                            orderedWidgets.push(titleWidget);
-                            processedWidgets.add(titleWidget);
-                        }
-                    }
-                    // Check if this is an expanded array item
-                    if (input._wavespeed_expanded_array_item && input._wavespeed_array_index === 0) {
-                        // First item of an array - insert array title before it
-                        const titleWidgetName = `${input._wavespeed_parent_array}_title`;
-                        const titleWidget = widgetMap.get(titleWidgetName);
-                        if (titleWidget && !processedWidgets.has(titleWidget)) {
-                            orderedWidgets.push(titleWidget);
-                            processedWidgets.add(titleWidget);
-                        }
-                    }
-                    
-                    // Add the widget for this input
-                    if (!processedWidgets.has(input.widget)) {
-                        orderedWidgets.push(input.widget);
-                        processedWidgets.add(input.widget);
-                    }
+            // Process expandedParams in order
+            for (const param of node.wavespeedState.expandedParams) {
+                const widget = widgetMap.get(param.name);
+                if (widget && widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
+                    orderedWidgets.push(widget);
+                    processedWidgets.add(widget);
                 }
             }
             
-            // Second pass: Add object array items (they don't have inputs) in order based on arrayParamGroups
-            // Process by arrayParamGroups to maintain correct order
-            if (node._arrayParamGroups) {
-                for (const [arrayName, groupInfo] of Object.entries(node._arrayParamGroups)) {
-                    if (groupInfo.isObjectArray && groupInfo.expandedNames) {
-                        // Insert array title if not already processed
-                        const titleWidgetName = `${arrayName}_title`;
-                        const titleWidget = widgetMap.get(titleWidgetName);
-                        if (titleWidget && !processedWidgets.has(titleWidget)) {
-                            orderedWidgets.push(titleWidget);
-                            processedWidgets.add(titleWidget);
-                        }
-                        
-                        // Add object array items in order
-                        for (const expandedName of groupInfo.expandedNames) {
-                            const widget = widgetMap.get(expandedName);
-                            if (widget && !processedWidgets.has(widget)) {
-                                orderedWidgets.push(widget);
-                                processedWidgets.add(widget);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Third pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
+            // Add any remaining dynamic widgets (shouldn't happen, but safety check)
             for (const widget of node.widgets) {
                 if (widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
                     orderedWidgets.push(widget);
@@ -1111,7 +1198,7 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                 }
             }
             
-            // Third pass: Build final array preserving non-dynamic widgets at original positions
+            // Build final array preserving non-dynamic widgets at original positions
             const reorderedWidgets = [];
             let orderedIndex = 0;
             
@@ -1139,7 +1226,7 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
             }
             
             if (orderChanged) {
-                console.log('[WaveSpeed DEBUG] Reordering widgets array to match inputs order');
+                console.log('[WaveSpeed DEBUG] Reordering widgets array to match expandedParams order');
                 node.widgets.splice(0, node.widgets.length, ...reorderedWidgets);
             }
         }
@@ -1286,9 +1373,8 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
 
                 // Step 3: Re-verify and fix order after Vue re-extraction
                 // Issue: extractVueNodeData may reorder widgets array
-                // Solution: Ensure inputs and widgets order consistency after re-extraction
-                // Array titles should be positioned before their corresponding array items
-                if (node.inputs && node.widgets) {
+                // Solution: Ensure widgets order matches expandedParams order
+                if (node.widgets && node.wavespeedState.expandedParams) {
                     // Build a map of widget name to widget for quick lookup
                     const widgetMap = new Map();
                     for (const widget of node.widgets) {
@@ -1297,66 +1383,20 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                         }
                     }
                     
-                    // Build ordered widgets list: match inputs order, insert array titles before their items
+                    // Build ordered widgets list based on expandedParams order
                     const orderedWidgets = [];
                     const processedWidgets = new Set();
                     
-                    // First pass: Process inputs and their widgets in order
-                    for (const input of node.inputs) {
-                        if (input._wavespeed_dynamic && input.widget) {
-                            if (input._wavespeed_size_component && input._wavespeed_size_index === 0) {
-                                const titleWidgetName = `${input._wavespeed_parent_size}_title`;
-                                const titleWidget = widgetMap.get(titleWidgetName);
-                                if (titleWidget && !processedWidgets.has(titleWidget)) {
-                                    orderedWidgets.push(titleWidget);
-                                    processedWidgets.add(titleWidget);
-                                }
-                            }
-                            // Check if this is an expanded array item
-                            if (input._wavespeed_expanded_array_item && input._wavespeed_array_index === 0) {
-                                // First item of an array - insert array title before it
-                                const titleWidgetName = `${input._wavespeed_parent_array}_title`;
-                                const titleWidget = widgetMap.get(titleWidgetName);
-                                if (titleWidget && !processedWidgets.has(titleWidget)) {
-                                    orderedWidgets.push(titleWidget);
-                                    processedWidgets.add(titleWidget);
-                                }
-                            }
-                            
-                            // Add the widget for this input
-                            if (!processedWidgets.has(input.widget)) {
-                                orderedWidgets.push(input.widget);
-                                processedWidgets.add(input.widget);
-                            }
+                    // Process expandedParams in order
+                    for (const param of node.wavespeedState.expandedParams) {
+                        const widget = widgetMap.get(param.name);
+                        if (widget && widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
+                            orderedWidgets.push(widget);
+                            processedWidgets.add(widget);
                         }
                     }
                     
-                    // Second pass: Add object array items (they don't have inputs) in order based on arrayParamGroups
-                    // Process by arrayParamGroups to maintain correct order
-                    if (node._arrayParamGroups) {
-                        for (const [arrayName, groupInfo] of Object.entries(node._arrayParamGroups)) {
-                            if (groupInfo.isObjectArray && groupInfo.expandedNames) {
-                                // Insert array title if not already processed
-                                const titleWidgetName = `${arrayName}_title`;
-                                const titleWidget = widgetMap.get(titleWidgetName);
-                                if (titleWidget && !processedWidgets.has(titleWidget)) {
-                                    orderedWidgets.push(titleWidget);
-                                    processedWidgets.add(titleWidget);
-                                }
-                                
-                                // Add object array items in order
-                                for (const expandedName of groupInfo.expandedNames) {
-                                    const widget = widgetMap.get(expandedName);
-                                    if (widget && !processedWidgets.has(widget)) {
-                                        orderedWidgets.push(widget);
-                                        processedWidgets.add(widget);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Third pass: Add any remaining dynamic widgets (shouldn't happen, but safety check)
+                    // Add any remaining dynamic widgets (shouldn't happen, but safety check)
                     for (const widget of node.widgets) {
                         if (widget._wavespeed_dynamic && !processedWidgets.has(widget)) {
                             orderedWidgets.push(widget);
@@ -1364,7 +1404,7 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                         }
                     }
                     
-                    // Third pass: Build final array preserving non-dynamic widgets at original positions
+                    // Build final array preserving non-dynamic widgets at original positions
                     const reorderedWidgets = [];
                     let orderedIndex = 0;
                     

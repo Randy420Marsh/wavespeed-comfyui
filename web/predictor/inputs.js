@@ -267,12 +267,36 @@ export function updateSingleMediaWidgetEditability(node, paramName) {
 
 // Update size widget editability based on width/height connection state
 export function updateSizeWidgetEditability(node, paramName) {
-    const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
+    // For size component widgets, we need to update BOTH width and height widgets
+    // because they share the ratio buttons state
+    
+    // Extract parent size name from component name (e.g., "size_width" -> "size")
+    const parentSizeName = paramName.replace(/_width$|_height$/, '');
+    
+    // Find both width and height widgets
+    const widthWidget = node.widgets?.find(w => w.name === `${parentSizeName}_width`);
+    const heightWidget = node.widgets?.find(w => w.name === `${parentSizeName}_height`);
+    
+    // Update both widgets if they have updateConnectionState method
+    if (widthWidget && widthWidget.updateConnectionState) {
+        widthWidget.updateConnectionState();
+    }
+    if (heightWidget && heightWidget.updateConnectionState) {
+        heightWidget.updateConnectionState();
+    }
+    
+    // If we updated the new widgets, we're done
+    if ((widthWidget && widthWidget.updateConnectionState) || (heightWidget && heightWidget.updateConnectionState)) {
+        return;
+    }
+    
+    // Legacy: For old size widget (single widget with embedded inputs)
+    const widget = node.widgets?.find(w => w._wavespeed_param === parentSizeName);
     if (!widget || !widget._wavespeed_size) return;
 
     // Find width and height input slots
-    const widthInput = node.inputs?.find(inp => inp.name === `${paramName}_width`);
-    const heightInput = node.inputs?.find(inp => inp.name === `${paramName}_height`);
+    const widthInput = node.inputs?.find(inp => inp.name === `${parentSizeName}_width`);
+    const heightInput = node.inputs?.find(inp => inp.name === `${parentSizeName}_height`);
 
     const widthConnected = widthInput && widthInput.link != null;
     const heightConnected = heightInput && heightInput.link != null;
