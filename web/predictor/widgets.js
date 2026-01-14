@@ -4,6 +4,7 @@
 
 import { getMediaType, getOriginalApiType } from './parameters.js';
 import { createFilePreview, createLoadingPreview, createErrorPreview, createUploadButton, uploadToWaveSpeed } from './media.js';
+import { showSizeToast } from './dom_widgets.js';
 
 // Helper: Create options for textarea-based DOM widgets (for ComfyUI auto-serialization)
 function textareaOptions(getTextarea, onSet) {
@@ -183,8 +184,7 @@ export function createSizeWidget(node, param) {
     const container = document.createElement('div');
     container.className = 'wavespeed-size-selector';
     container.setAttribute('data-widget-name', param.name); // For precise DOM matching
-    
-    let isExpanded = false;
+
     let currentWidth = 1024;
     let currentHeight = 1024;
     let currentRatio = '1:1';
@@ -192,58 +192,64 @@ export function createSizeWidget(node, param) {
     // Use !== undefined check instead of || to handle 0 values correctly
     const minSize = param.min !== undefined ? param.min : 256;
     const maxSize = param.max !== undefined ? param.max : 1536;
-    
-    // Parse default value
-    if (param.default) {
-        const match = param.default.match(/(\d+)\s*[*x×]\s*(\d+)/i);
-        if (match) {
-            currentWidth = parseInt(match[1]);
-            currentHeight = parseInt(match[2]);
+
+    // Parse default value or handle x-hidden
+    if (param.xHidden === true) {
+        // x-hidden: only use API default values, otherwise keep null (empty)
+        if (param.default) {
+            const match = param.default.match(/(\d+)\s*[*x×]\s*(\d+)/i);
+            if (match) {
+                currentWidth = parseInt(match[1]);
+                currentHeight = parseInt(match[2]);
+            } else {
+                currentWidth = null;
+                currentHeight = null;
+            }
+        } else {
+            currentWidth = null;
+            currentHeight = null;
+        }
+    } else {
+        // non x-hidden: use default values or fallback to 1024
+        if (param.default) {
+            const match = param.default.match(/(\d+)\s*[*x×]\s*(\d+)/i);
+            if (match) {
+                currentWidth = parseInt(match[1]);
+                currentHeight = parseInt(match[2]);
+            }
         }
     }
-    
-    // Collapsible header
+
+    // Header with title and range (no collapse functionality)
     const header = document.createElement('div');
     header.className = 'wavespeed-size-header';
     header.style.display = 'flex';
     header.style.alignItems = 'center';
     header.style.gap = '8px';
     header.style.padding = '8px 10px';
-    header.style.cursor = 'pointer';
-    header.style.userSelect = 'none';
     header.style.backgroundColor = '#2a2a2a';
     header.style.border = '1px solid #444';
-    header.style.borderRadius = '4px';
-    
-    const toggleIcon = document.createElement('span');
-    toggleIcon.className = 'wavespeed-size-toggle';
-    toggleIcon.innerHTML = '○';
-    toggleIcon.style.color = '#4a9eff';
-    toggleIcon.style.fontSize = '10px';
-    toggleIcon.style.width = '14px';
-    toggleIcon.style.textAlign = 'center';
-    
+    header.style.borderRadius = '4px 4px 0 0';
+
     const titleLabel = createLabelWithRequired(param.displayName || 'Size', param.required, param.description);
     titleLabel.style.color = '#e0e0e0';
     titleLabel.style.fontSize = '12px';
     titleLabel.style.fontWeight = '500';
-    
-    const valuePreview = document.createElement('span');
-    valuePreview.className = 'wavespeed-size-preview';
-    valuePreview.textContent = `${currentWidth}*${currentHeight}`;
-    valuePreview.style.marginLeft = 'auto';
-    valuePreview.style.color = '#888';
-    valuePreview.style.fontSize = '11px';
-    valuePreview.style.fontFamily = 'monospace';
-    
-    header.appendChild(toggleIcon);
+
+    const rangeInfo = document.createElement('span');
+    rangeInfo.className = 'wavespeed-size-range';
+    rangeInfo.textContent = `Range: ${minSize} - ${maxSize}`;
+    rangeInfo.style.marginLeft = 'auto';
+    rangeInfo.style.color = '#666';
+    rangeInfo.style.fontSize = '11px';
+
     header.appendChild(titleLabel);
-    header.appendChild(valuePreview);
-    
-    // Collapsible content area
+    header.appendChild(rangeInfo);
+
+    // Content area (always expanded)
     const content = document.createElement('div');
     content.className = 'wavespeed-size-content';
-    content.style.display = 'none';
+    content.style.display = 'flex';
     content.style.flexDirection = 'column';
     content.style.gap = '8px';
     content.style.padding = '10px';
@@ -289,25 +295,20 @@ export function createSizeWidget(node, param) {
         ratioRow.appendChild(btn);
     });
     
-    // Width/Height input row
-    const inputRow = document.createElement('div');
-    inputRow.className = 'wavespeed-size-inputs';
-    inputRow.style.display = 'flex';
-    inputRow.style.alignItems = 'flex-end';
-    inputRow.style.gap = '8px';
-    
-    // Width
-    const widthGroup = document.createElement('div');
-    widthGroup.style.display = 'flex';
-    widthGroup.style.flexDirection = 'column';
-    widthGroup.style.gap = '4px';
-    widthGroup.style.flex = '1';
-    
+    // Width row
+    const widthRow = document.createElement('div');
+    widthRow.className = 'wavespeed-size-width-row';
+    widthRow.style.display = 'flex';
+    widthRow.style.alignItems = 'center';
+    widthRow.style.gap = '8px';
+    widthRow.style.padding = '0 10px';
+
     const widthLabel = document.createElement('label');
     widthLabel.textContent = 'Width';
     widthLabel.style.color = '#888';
     widthLabel.style.fontSize = '11px';
-    
+    widthLabel.style.minWidth = '48px';
+
     const widthInput = document.createElement('input');
     widthInput.type = 'number';
     widthInput.className = 'wavespeed-size-input';
@@ -315,7 +316,7 @@ export function createSizeWidget(node, param) {
     widthInput.min = minSize;
     widthInput.max = maxSize;
     widthInput.step = 8;
-    widthInput.style.width = '100%';
+    widthInput.style.flex = '1';
     widthInput.style.padding = '6px 10px';
     widthInput.style.backgroundColor = '#2a2a2a';
     widthInput.style.color = '#e0e0e0';
@@ -325,42 +326,24 @@ export function createSizeWidget(node, param) {
     widthInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     widthInput.style.textAlign = 'center';
     widthInput.style.boxSizing = 'border-box';
-    
-    widthGroup.appendChild(widthLabel);
-    widthGroup.appendChild(widthInput);
-    
-    // Swap button
-    const swapBtn = document.createElement('button');
-    swapBtn.className = 'wavespeed-size-swap';
-    swapBtn.innerHTML = '⇄';
-    swapBtn.title = 'Swap width and height';
-    swapBtn.style.padding = '6px 10px';
-    swapBtn.style.backgroundColor = '#2a2a2a';
-    swapBtn.style.color = '#e0e0e0';
-    swapBtn.style.border = '1px solid #444';
-    swapBtn.style.borderRadius = '4px';
-    swapBtn.style.cursor = 'pointer';
-    swapBtn.style.fontSize = '14px';
-    swapBtn.style.transition = 'all 0.2s ease';
-    
-    swapBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        swapDimensions();
-    });
-    swapBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-    
-    // Height
-    const heightGroup = document.createElement('div');
-    heightGroup.style.display = 'flex';
-    heightGroup.style.flexDirection = 'column';
-    heightGroup.style.gap = '4px';
-    heightGroup.style.flex = '1';
-    
+
+    widthRow.appendChild(widthLabel);
+    widthRow.appendChild(widthInput);
+
+    // Height row
+    const heightRow = document.createElement('div');
+    heightRow.className = 'wavespeed-size-height-row';
+    heightRow.style.display = 'flex';
+    heightRow.style.alignItems = 'center';
+    heightRow.style.gap = '8px';
+    heightRow.style.padding = '0 10px';
+
     const heightLabel = document.createElement('label');
     heightLabel.textContent = 'Height';
     heightLabel.style.color = '#888';
     heightLabel.style.fontSize = '11px';
-    
+    heightLabel.style.minWidth = '48px';
+
     const heightInput = document.createElement('input');
     heightInput.type = 'number';
     heightInput.className = 'wavespeed-size-input';
@@ -368,7 +351,7 @@ export function createSizeWidget(node, param) {
     heightInput.min = minSize;
     heightInput.max = maxSize;
     heightInput.step = 8;
-    heightInput.style.width = '100%';
+    heightInput.style.flex = '1';
     heightInput.style.padding = '6px 10px';
     heightInput.style.backgroundColor = '#2a2a2a';
     heightInput.style.color = '#e0e0e0';
@@ -378,72 +361,28 @@ export function createSizeWidget(node, param) {
     heightInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     heightInput.style.textAlign = 'center';
     heightInput.style.boxSizing = 'border-box';
-    
-    heightGroup.appendChild(heightLabel);
-    heightGroup.appendChild(heightInput);
-    
-    inputRow.appendChild(widthGroup);
-    inputRow.appendChild(swapBtn);
-    inputRow.appendChild(heightGroup);
-    
-    // Info row
-    const infoRow = document.createElement('div');
-    infoRow.className = 'wavespeed-size-info';
-    infoRow.style.display = 'flex';
-    infoRow.style.justifyContent = 'space-between';
-    infoRow.style.alignItems = 'center';
-    infoRow.style.fontSize = '11px';
-    infoRow.style.color = '#888';
-    
-    const sizeDisplay = document.createElement('span');
-    sizeDisplay.className = 'wavespeed-size-display';
-    sizeDisplay.textContent = `${currentWidth} × ${currentHeight} px`;
-    sizeDisplay.style.color = '#4a9eff';
-    sizeDisplay.style.fontWeight = '500';
-    
-    const rangeInfo = document.createElement('span');
-    rangeInfo.className = 'wavespeed-size-range';
-    rangeInfo.textContent = `Range: ${minSize} - ${maxSize}`;
-    rangeInfo.style.color = '#666';
-    
-    infoRow.appendChild(sizeDisplay);
-    infoRow.appendChild(rangeInfo);
-    
-    // Assemble content area
+
+    heightRow.appendChild(heightLabel);
+    heightRow.appendChild(heightInput);
+
+    // Assemble content area (removed infoRow with sizeDisplay and rangeInfo)
     content.appendChild(ratioRow);
-    content.appendChild(inputRow);
-    content.appendChild(infoRow);
-    
+    content.appendChild(widthRow);
+    content.appendChild(heightRow);
+
     // Assemble container
     container.appendChild(header);
     container.appendChild(content);
-    
-    // Event handler functions
-    function toggleExpand() {
-        isExpanded = !isExpanded;
-        content.style.display = isExpanded ? 'flex' : 'none';
-        toggleIcon.innerHTML = isExpanded ? '●' : '○';
-        header.style.borderRadius = isExpanded ? '4px 4px 0 0' : '4px';
-        
-        // Force recalculate node size
-        // Use requestAnimationFrame to ensure DOM update is complete before calculating
-        requestAnimationFrame(() => {
-            const newSize = node.computeSize();
-            node.setSize(newSize);
-            if (node.graph) {
-                node.graph.setDirtyCanvas(true, true);
-            }
-        });
-    }
-    
+
+    // Event handler functions (removed toggleExpand function)
     function selectRatio(preset) {
         currentRatio = preset.label;
         currentWidth = preset.width;
         currentHeight = preset.height;
-        
+
         widthInput.value = currentWidth;
         heightInput.value = currentHeight;
-        
+
         // Update button state
         ratioButtons.forEach(btn => {
             const isActive = btn.dataset.ratio === preset.label;
@@ -451,52 +390,48 @@ export function createSizeWidget(node, param) {
             btn.style.color = isActive ? 'white' : '#e0e0e0';
             btn.style.borderColor = isActive ? '#4a9eff' : '#444';
         });
-        
-        updateDisplay();
+
         notifyChange();
     }
-    
-    function swapDimensions() {
-        const temp = currentWidth;
-        currentWidth = currentHeight;
-        currentHeight = temp;
-        
-        widthInput.value = currentWidth;
-        heightInput.value = currentHeight;
-        
-        updateRatioButtons();
-        updateDisplay();
-        notifyChange();
-    }
-    
+
     function onInputChange() {
         currentWidth = parseInt(widthInput.value) || minSize;
         currentHeight = parseInt(heightInput.value) || minSize;
-        
+
         updateRatioButtons();
-        updateDisplay();
     }
-    
+
     function validateAndNotify() {
-        // Validate range
+        // Validate range and show toast if out of range
+        const originalWidth = currentWidth;
+        const originalHeight = currentHeight;
+
         currentWidth = Math.max(minSize, Math.min(maxSize, currentWidth));
         currentHeight = Math.max(minSize, Math.min(maxSize, currentHeight));
-        
+
+        // Show toast if value was out of range
+        if (originalWidth < minSize || originalWidth > maxSize) {
+            showSizeToast(`Width must be between ${minSize} and ${maxSize}`, widthInput);
+        }
+        if (originalHeight < minSize || originalHeight > maxSize) {
+            showSizeToast(`Height must be between ${minSize} and ${maxSize}`, heightInput);
+        }
+
         // Align to multiples of 8
         currentWidth = Math.round(currentWidth / 8) * 8;
         currentHeight = Math.round(currentHeight / 8) * 8;
-        
+
         widthInput.value = currentWidth;
         heightInput.value = currentHeight;
-        
-        updateDisplay();
+
+        updateRatioButtons();
         notifyChange();
     }
-    
+
     function updateRatioButtons() {
         const ratio = currentWidth / currentHeight;
         let matchedRatio = null;
-        
+
         for (const preset of SIZE_RATIO_PRESETS) {
             const presetRatio = preset.width / preset.height;
             if (Math.abs(ratio - presetRatio) < 0.01) {
@@ -504,7 +439,7 @@ export function createSizeWidget(node, param) {
                 break;
             }
         }
-        
+
         currentRatio = matchedRatio;
         ratioButtons.forEach(btn => {
             const isActive = btn.dataset.ratio === matchedRatio;
@@ -513,22 +448,19 @@ export function createSizeWidget(node, param) {
             btn.style.borderColor = isActive ? '#4a9eff' : '#444';
         });
     }
-    
-    function updateDisplay() {
-        sizeDisplay.textContent = `${currentWidth} × ${currentHeight} px`;
-        valuePreview.textContent = `${currentWidth}*${currentHeight}`;
-    }
-    
+
     function notifyChange() {
-        const value = `${currentWidth}*${currentHeight}`;
-        node.wavespeedState.parameterValues[param.name] = value;
+        const value = currentWidth && currentHeight ? `${currentWidth}*${currentHeight}` : '';
+        // Don't send empty size values to backend (for x-hidden support)
+        if (value === '') {
+            delete node.wavespeedState.parameterValues[param.name];
+        } else {
+            node.wavespeedState.parameterValues[param.name] = value;
+        }
         updateRequestJson(node);
     }
-    
-    // Event listeners
-    header.addEventListener('click', toggleExpand);
-    header.addEventListener('mousedown', (e) => e.stopPropagation());
-    
+
+    // Event listeners (removed header click for toggle)
     widthInput.addEventListener('input', onInputChange);
     heightInput.addEventListener('input', onInputChange);
     widthInput.addEventListener('blur', validateAndNotify);
@@ -543,28 +475,36 @@ export function createSizeWidget(node, param) {
 
     widget._wavespeed_dynamic = true;
     widget._wavespeed_param = param.name;
+    widget._wavespeed_size = true; // Mark as size widget
 
-    // Custom computeSize method, return correct height based on expanded state
-    const originalComputeSize = widget.computeSize ? widget.computeSize.bind(widget) : null;
+    // Save UI element references for connection state handling
+    widget._widthInput = widthInput;
+    widget._heightInput = heightInput;
+    widget._ratioButtons = ratioButtons;
+
+    // Custom computeSize method (always expanded now)
     widget.computeSize = function() {
-        // Collapsed state: only header height (~36px)
-        // Expanded state: header + content height (~150px)
-        const collapsedHeight = 40;
-        const expandedHeight = 160;
-        const height = isExpanded ? expandedHeight : collapsedHeight;
-        return [node.size[0] - 20, height];
+        // Always expanded: header + content height (~150px)
+        const expandedHeight = 150;
+        return [node.size[0] - 20, expandedHeight];
     };
-    
+
     // Define value property
     const descriptor = Object.getOwnPropertyDescriptor(widget, 'value');
     if (!descriptor || descriptor.configurable) {
         try {
             Object.defineProperty(widget, 'value', {
                 get() {
-                    return `${currentWidth}*${currentHeight}`;
+                    return currentWidth && currentHeight ? `${currentWidth}*${currentHeight}` : '';
                 },
                 set(val) {
-                    if (!val) return;
+                    if (!val) {
+                        currentWidth = null;
+                        currentHeight = null;
+                        widthInput.value = '';
+                        heightInput.value = '';
+                        return;
+                    }
                     const match = val.match(/(\d+)\s*[*x×]\s*(\d+)/i);
                     if (match) {
                         currentWidth = parseInt(match[1]);
@@ -572,7 +512,6 @@ export function createSizeWidget(node, param) {
                         widthInput.value = currentWidth;
                         heightInput.value = currentHeight;
                         updateRatioButtons();
-                        updateDisplay();
                     }
                 },
                 enumerable: true,
@@ -588,7 +527,10 @@ export function createSizeWidget(node, param) {
     }
 
     // Initialize parameter value
-    node.wavespeedState.parameterValues[param.name] = `${currentWidth}*${currentHeight}`;
+    // Don't initialize if x-hidden and no default (keep undefined)
+    if (currentWidth && currentHeight) {
+        node.wavespeedState.parameterValues[param.name] = `${currentWidth}*${currentHeight}`;
+    }
 
     // Add restoreValue method for workflow restoration
     widget.restoreValue = createRestoreValueFn(node, param, function(val) {
@@ -600,7 +542,6 @@ export function createSizeWidget(node, param) {
             widthInput.value = currentWidth;
             heightInput.value = currentHeight;
             updateRatioButtons();
-            updateDisplay();
         }
     });
 
@@ -706,6 +647,54 @@ export function createArrayTitleWidget(node, param) {
     // Override computeSize for input position calculation only
     // When ComfyUI calculates input positions, it should skip this widget
     // We'll handle this in the node's position calculation logic
+
+    return widget;
+}
+
+// Create size title widget (only display title, no input slot)
+export function createSizeTitleWidget(node, param) {
+    const container = document.createElement('div');
+    container.className = 'wavespeed-size-title-widget';
+    container.setAttribute('data-widget-name', param.name);
+    container.style.display = 'flex';
+    container.style.alignItems = 'center';
+    container.style.gap = '2px';
+    container.style.marginBottom = '2px';
+    container.style.paddingTop = '4px';
+
+    const titleText = document.createElement('span');
+    titleText.textContent = param.parentSizeName || param.displayName;
+    titleText.style.color = '#4a9eff';
+    titleText.style.fontSize = '12px';
+    titleText.style.fontWeight = '600';
+    titleText.style.textTransform = 'capitalize';
+    container.appendChild(titleText);
+
+    if (param.parentRequired) {
+        const requiredMark = document.createElement('span');
+        requiredMark.textContent = '*';
+        requiredMark.style.color = '#ff6b6b';
+        requiredMark.style.fontSize = '14px';
+        requiredMark.style.fontWeight = 'normal';
+        requiredMark.style.marginLeft = '1px';
+        requiredMark.style.lineHeight = '1';
+        container.appendChild(requiredMark);
+    }
+
+    if (param.parentDescription) {
+        const infoIcon = createInfoTooltip(param.parentDescription);
+        container.appendChild(infoIcon);
+    }
+
+    const widget = node.addDOMWidget(param.name, 'div', container, { serialize: false });
+
+    widget._wavespeed_dynamic = true;
+    widget._wavespeed_size_title = true;
+    widget._wavespeed_no_input = true;
+
+    widget.computeSize = function() {
+        return [node.size[0] - 20, 26];
+    };
 
     return widget;
 }
@@ -1983,6 +1972,11 @@ export function createParameterWidget(node, param) {
         return createArrayTitleWidget(node, param);
     }
 
+    // Check if size title (no input slot, only display title)
+    if (param.type === 'SIZE_TITLE' || param.isSizeTitle) {
+        return createSizeTitleWidget(node, param);
+    }
+
     // Check if object array item (e.g., bbox_condition with height/length/width)
     if (param.type === 'OBJECT_ARRAY_ITEM' || param.isObjectArrayItem) {
         return createObjectArrayItemWidget(node, param);
@@ -2232,6 +2226,38 @@ export function updateRequestJson(node) {
         if (validItems.length > 0) {
             values[parentArrayName] = validItems;
         }
+    }
+
+    // Handle size parameters: merge size_width and size_height into size
+    // If both width and height are empty/undefined, don't include size parameter
+    const sizeParams = {};
+    for (const paramName in values) {
+        const match = paramName.match(/^(.+)_(width|height)$/);
+        if (match) {
+            const sizeName = match[1];
+            const component = match[2];
+            if (!sizeParams[sizeName]) {
+                sizeParams[sizeName] = {};
+            }
+            sizeParams[sizeName][component] = values[paramName];
+        }
+    }
+    
+    // Build size parameters and remove component parameters
+    for (const sizeName in sizeParams) {
+        const width = sizeParams[sizeName].width;
+        const height = sizeParams[sizeName].height;
+        
+        // Remove component parameters from values
+        delete values[`${sizeName}_width`];
+        delete values[`${sizeName}_height`];
+        
+        // Only add size parameter if both width and height have values
+        if (width !== undefined && width !== null && width !== '' &&
+            height !== undefined && height !== null && height !== '') {
+            values[sizeName] = `${width}*${height}`;
+        }
+        // If either is empty, don't include size parameter at all
     }
 
     // Type conversion
