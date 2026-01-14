@@ -2,7 +2,7 @@
  * WaveSpeed Predictor - Input slot management module
  */
 
-import { getMediaType, getOriginalApiType } from './parameters.js';
+import { getMediaType, getOriginalApiType, isSizeParameter } from './parameters.js';
 import { createMediaWidgetUI } from './widgets.js';
 
 // Configure connection change handlers for a node
@@ -20,8 +20,14 @@ export function configureConnectionHandlers(node) {
         if (type === LiteGraph.INPUT) {
             const input = this.inputs?.[slotIndex];
             if (input && input._wavespeed_dynamic) {
-                // Update widget editability based on connection state
-                updateSingleMediaWidgetEditability(this, input.name);
+                // Check if this is a size parameter component (width or height)
+                if (input._wavespeed_size_component) {
+                    // Update size widget editability
+                    updateSizeWidgetEditability(this, input._wavespeed_param);
+                } else {
+                    // Update widget editability based on connection state
+                    updateSingleMediaWidgetEditability(this, input.name);
+                }
             }
 
             // Update model selector and category tabs state based on connection status
@@ -76,7 +82,10 @@ function getComfyInputType(param) {
 
 // Update dynamic inputs
 export function updateDynamicInputs(node, parameters) {
+    console.log('[WaveSpeed DEBUG] updateDynamicInputs called with parameters:', parameters?.map(p => p.name));
+
     if (!parameters || parameters.length === 0) {
+        console.log('[WaveSpeed DEBUG] updateDynamicInputs: No parameters, returning early');
         return;
     }
 
@@ -91,12 +100,42 @@ export function updateDynamicInputs(node, parameters) {
     // Create connectable input for each parameter
     for (let i = 0; i < parameters.length; i++) {
         const param = parameters[i];
-        let inputType = getComfyInputType(param);
-        
-        const input = node.addInput(param.name, inputType);
-        if (input) {
-            input._wavespeed_dynamic = true;
-            input._wavespeed_param = param.name;
+        console.log('[WaveSpeed DEBUG] Processing parameter:', param.name, 'isSizeParameter:', isSizeParameter(param.name));
+
+        // Special handling for size parameters: create width and height inputs instead
+        if (isSizeParameter(param.name)) {
+            console.log('[WaveSpeed] Detected size parameter:', param.name, '- creating width/height inputs');
+
+            // Create width input
+            const widthInput = node.addInput(`${param.name}_width`, 'INT');
+            if (widthInput) {
+                widthInput._wavespeed_dynamic = true;
+                widthInput._wavespeed_param = param.name;
+                widthInput._wavespeed_size_component = 'width';
+                widthInput._wavespeed_parent_size = param.name;
+                widthInput._wavespeed_size_index = 0;
+                widthInput.label = 'Width';
+            }
+
+            // Create height input
+            const heightInput = node.addInput(`${param.name}_height`, 'INT');
+            if (heightInput) {
+                heightInput._wavespeed_dynamic = true;
+                heightInput._wavespeed_param = param.name;
+                heightInput._wavespeed_size_component = 'height';
+                heightInput._wavespeed_parent_size = param.name;
+                heightInput._wavespeed_size_index = 1;
+                heightInput.label = 'Height';
+            }
+        } else {
+            // Normal parameter: create single input
+            let inputType = getComfyInputType(param);
+
+            const input = node.addInput(param.name, inputType);
+            if (input) {
+                input._wavespeed_dynamic = true;
+                input._wavespeed_param = param.name;
+            }
         }
     }
 
@@ -177,13 +216,13 @@ export function updateSingleMediaWidgetEditability(node, paramName) {
             widget.inputEl.style.cursor = 'not-allowed';
             widget.inputEl.placeholder = '[Connected]';
         }
-        
+
         if (widget.uploadBtn) {
             widget.uploadBtn.disabled = true;
             widget.uploadBtn.style.opacity = '0.5';
             widget.uploadBtn.style.cursor = 'not-allowed';
         }
-        
+
         if (widget.previewContainer) {
             const previews = widget.previewContainer.querySelectorAll('div');
             previews.forEach(preview => {
@@ -204,13 +243,13 @@ export function updateSingleMediaWidgetEditability(node, paramName) {
             widget.inputEl.style.cursor = 'text';
             widget.inputEl.placeholder = widget.inputEl.getAttribute('data-original-placeholder') || `Enter ${paramName.toLowerCase()}...`;
         }
-        
+
         if (widget.uploadBtn) {
             widget.uploadBtn.disabled = false;
             widget.uploadBtn.style.opacity = '1';
             widget.uploadBtn.style.cursor = 'pointer';
         }
-        
+
         if (widget.previewContainer) {
             const previews = widget.previewContainer.querySelectorAll('div');
             previews.forEach(preview => {
@@ -222,6 +261,68 @@ export function updateSingleMediaWidgetEditability(node, paramName) {
                 }
                 preview.style.cursor = 'pointer';
             });
+        }
+    }
+}
+
+// Update size widget editability based on width/height connection state
+export function updateSizeWidgetEditability(node, paramName) {
+    const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
+    if (!widget || !widget._wavespeed_size) return;
+
+    // Find width and height input slots
+    const widthInput = node.inputs?.find(inp => inp.name === `${paramName}_width`);
+    const heightInput = node.inputs?.find(inp => inp.name === `${paramName}_height`);
+
+    const widthConnected = widthInput && widthInput.link != null;
+    const heightConnected = heightInput && heightInput.link != null;
+    const anyConnected = widthConnected || heightConnected;
+
+    // Get UI elements from widget
+    const widthInputEl = widget._widthInput;
+    const heightInputEl = widget._heightInput;
+    const ratioButtons = widget._ratioButtons || [];
+
+    // Disable ratio buttons if any connection exists
+    ratioButtons.forEach(btn => {
+        if (anyConnected) {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+        } else {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+        }
+    });
+
+    // Disable width input if width is connected
+    if (widthInputEl) {
+        if (widthConnected) {
+            widthInputEl.disabled = true;
+            widthInputEl.style.opacity = '0.5';
+            widthInputEl.style.cursor = 'not-allowed';
+            widthInputEl.placeholder = '[Connected]';
+        } else {
+            widthInputEl.disabled = false;
+            widthInputEl.style.opacity = '1';
+            widthInputEl.style.cursor = 'text';
+            widthInputEl.placeholder = '';
+        }
+    }
+
+    // Disable height input if height is connected
+    if (heightInputEl) {
+        if (heightConnected) {
+            heightInputEl.disabled = true;
+            heightInputEl.style.opacity = '0.5';
+            heightInputEl.style.cursor = 'not-allowed';
+            heightInputEl.placeholder = '[Connected]';
+        } else {
+            heightInputEl.disabled = false;
+            heightInputEl.style.opacity = '1';
+            heightInputEl.style.cursor = 'text';
+            heightInputEl.placeholder = '';
         }
     }
 }

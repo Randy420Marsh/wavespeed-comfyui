@@ -86,7 +86,13 @@ export async function restoreWorkflowData(node) {
             return mediaType === 'file';
         });
 
+        console.log('[WaveSpeed DEBUG] Parameter classification:');
+        console.log('  - arrayParams:', arrayParams.map(p => p.name));
+        console.log('  - mediaParams:', mediaParams.map(p => p.name));
+        console.log('  - nonMediaParams:', nonMediaParams.map(p => p.name));
+
         // 7. Create inputs (unified logic)
+        console.log('[WaveSpeed DEBUG] Calling updateDynamicInputs with:', nonMediaParams.map(p => p.name));
         updateDynamicInputs(node, nonMediaParams);
         setupSingleMediaParameters(node, mediaParams);
 

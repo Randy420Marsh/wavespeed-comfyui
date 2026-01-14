@@ -134,6 +134,7 @@ export function parseModelParameters(inputSchema) {
             isArray: prop.type === 'array',
             originalType: prop.type,
             uiComponent: prop['x-ui-component'],
+            xHidden: prop['x-hidden'] === true,
         };
 
         if (prop.enum && prop.enum.length > 0) {
@@ -183,6 +184,14 @@ export function getComfyInputType(param) {
     }
 
     return typeMap[param.type] || '*';
+}
+
+// Check if parameter is a size parameter
+export function isSizeParameter(paramName) {
+    const lowerName = paramName.toLowerCase();
+    return lowerName === 'size' ||
+           lowerName === 'image_size' ||
+           lowerName === 'output_size';
 }
 
 // Detect file input type

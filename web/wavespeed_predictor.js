@@ -682,10 +682,12 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         // Expand array parameters to independent parameters
         const expandedParams = [];
         const arrayParamGroups = {};
+        const sizeParamGroups = {};
 
         for (const param of parameters) {
             const originalType = parametersModule.getOriginalApiType(param);
             const isArray = param.isArray || parametersModule.isArrayParameter(param.name, originalType);
+            const isSize = parametersModule.isSizeParameter(param.name);
 
             if (isArray) {
                 // Check if this is an object array (e.g., bbox_condition with height/length/width)
@@ -779,6 +781,31 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                         arrayParamGroups[param.name].expandedNames.push(expandedName);
                     }
                 }
+            } else if (isSize) {
+                sizeParamGroups[param.name] = {
+                    originalParam: param,
+                    expandedNames: [param.name],
+                    isSize: true
+                };
+
+                const titleParam = {
+                    name: `${param.name}_title`,
+                    displayName: param.name,
+                    isSizeTitle: true,
+                    parentSizeName: param.name,
+                    parentRequired: param.required,
+                    parentDescription: param.description,
+                    type: 'SIZE_TITLE'
+                };
+                expandedParams.push(titleParam);
+
+                const sizeParam = {
+                    ...param,
+                    parentSizeName: param.name,
+                    parentRequired: param.required,
+                    parentDescription: param.description
+                };
+                expandedParams.push(sizeParam);
             } else {
                 expandedParams.push(param);
             }
@@ -786,6 +813,7 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
 
         // Save array parameter group info
         node._arrayParamGroups = arrayParamGroups;
+        node._sizeParamGroups = sizeParamGroups;
 
         // Create input slot and widget for each expanded parameter
         // REFERENCE: Standard pattern from setupSingleMediaParameters (inputs.js:55-108)
@@ -802,6 +830,18 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                         // CRITICAL FIX: Set all flags explicitly for array title
                         widget._wavespeed_dynamic = true;
                         widget._wavespeed_no_input = true;  // Array title has no input slot
+                        widget._wavespeed_base = false;
+                        widget._wavespeed_hidden = false;
+                    }
+                    continue;
+                }
+
+                // Size title does not create input slot
+                if (param.isSizeTitle || param.type === 'SIZE_TITLE') {
+                    const widget = widgetsModule.createParameterWidget(node, param);
+                    if (widget) {
+                        widget._wavespeed_dynamic = true;
+                        widget._wavespeed_no_input = true;
                         widget._wavespeed_base = false;
                         widget._wavespeed_hidden = false;
                     }
@@ -839,6 +879,72 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                             delete input.widget;
                         }
                     }
+                }
+
+                // Special handling for size parameters: create width/height inputs and bind one widget
+                if (parametersModule.isSizeParameter(param.name)) {
+                    let widthInput = node.inputs?.find(inp => inp.name === `${param.name}_width`);
+                    let heightInput = node.inputs?.find(inp => inp.name === `${param.name}_height`);
+                    console.log('[WaveSpeed DEBUG] widthInput:', widthInput);
+                    console.log('[WaveSpeed DEBUG] heightInput:', heightInput);
+                    if (!widthInput) {
+                        widthInput = node.addInput(`${param.name}_width`, 'INT');
+                        if (widthInput) {
+                            widthInput._wavespeed_dynamic = true;
+                            widthInput._wavespeed_param = param.name;
+                            widthInput._wavespeed_size_component = 'width';
+                            widthInput._wavespeed_parent_size = param.name;
+                            widthInput._wavespeed_size_index = 0;
+                            widthInput.label = 'Width';
+                        }
+                    } else {
+                        widthInput._wavespeed_size_component = 'width';
+                        widthInput._wavespeed_parent_size = param.name;
+                        widthInput._wavespeed_size_index = 0;
+                    }
+
+                    if (!heightInput) {
+                        heightInput = node.addInput(`${param.name}_height`, 'INT');
+                        if (heightInput) {
+                            heightInput._wavespeed_dynamic = true;
+                            heightInput._wavespeed_param = param.name;
+                            heightInput._wavespeed_size_component = 'height';
+                            heightInput._wavespeed_parent_size = param.name;
+                            heightInput._wavespeed_size_index = 1;
+                            heightInput.label = 'Height';
+                        }
+                    } else {
+                        heightInput._wavespeed_size_component = 'height';
+                        heightInput._wavespeed_parent_size = param.name;
+                        heightInput._wavespeed_size_index = 1;
+                    }
+
+                    const widget = widgetsModule.createParameterWidget(node, param);
+                    if (!widget) {
+                        console.warn('[WaveSpeed Predictor] Failed to create size widget for:', param.name);
+                        continue;
+                    }
+
+                    widget._wavespeed_dynamic = true;
+                    widget._wavespeed_no_input = false;
+                    widget._wavespeed_base = false;
+                    widget._wavespeed_hidden = false;
+
+                    if (widthInput) {
+                        widthInput.widget = widget;
+                        if (widget._wavespeed_label_offset) {
+                            widthInput._wavespeed_label_offset = widget._wavespeed_label_offset;
+                        }
+                    }
+                    if (heightInput) {
+                        heightInput.widget = widget;
+                        if (widget._wavespeed_label_offset) {
+                            heightInput._wavespeed_label_offset = widget._wavespeed_label_offset;
+                        }
+                    }
+
+                    widget.linkedInput = widthInput || heightInput || null;
+                    continue;
                 }
                 
                 // If not exists, create new input slot
@@ -945,6 +1051,14 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
             // First pass: Process inputs and their widgets in order
             for (const input of node.inputs) {
                 if (input._wavespeed_dynamic && input.widget) {
+                    if (input._wavespeed_size_component && input._wavespeed_size_index === 0) {
+                        const titleWidgetName = `${input._wavespeed_parent_size}_title`;
+                        const titleWidget = widgetMap.get(titleWidgetName);
+                        if (titleWidget && !processedWidgets.has(titleWidget)) {
+                            orderedWidgets.push(titleWidget);
+                            processedWidgets.add(titleWidget);
+                        }
+                    }
                     // Check if this is an expanded array item
                     if (input._wavespeed_expanded_array_item && input._wavespeed_array_index === 0) {
                         // First item of an array - insert array title before it
@@ -1190,6 +1304,14 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                     // First pass: Process inputs and their widgets in order
                     for (const input of node.inputs) {
                         if (input._wavespeed_dynamic && input.widget) {
+                            if (input._wavespeed_size_component && input._wavespeed_size_index === 0) {
+                                const titleWidgetName = `${input._wavespeed_parent_size}_title`;
+                                const titleWidget = widgetMap.get(titleWidgetName);
+                                if (titleWidget && !processedWidgets.has(titleWidget)) {
+                                    orderedWidgets.push(titleWidget);
+                                    processedWidgets.add(titleWidget);
+                                }
+                            }
                             // Check if this is an expanded array item
                             if (input._wavespeed_expanded_array_item && input._wavespeed_array_index === 0) {
                                 // First item of an array - insert array title before it
@@ -1303,10 +1425,12 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         //   - First matching container would be replaced multiple times
         // Solution: Use data-widget-name attribute for precise matching
         const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+        console.log('[WaveSpeed DEBUG] nodeElement:', nodeElement);
         if (nodeElement && node.widgets) {
             // Only process widgets that have input/textarea (skip array-title, etc.)
             const inputWidgets = node.widgets.filter(w => {
-                if (!w._wavespeed_dynamic || !w.element || w._wavespeed_array_title || w._wavespeed_no_input) {
+                if (!w._wavespeed_dynamic || !w.element || w._wavespeed_array_title || w._wavespeed_size_title || w._wavespeed_no_input) {
+                    console.log('[WaveSpeed DEBUG] Skipping widget:', w);
                     return false;
                 }
                 // Check if widget has input/textarea
