@@ -274,7 +274,8 @@ export function createSizeComponentWidget(node, param, sharedState) {
             configurable: true
         });
     } else {
-        console.warn('[WaveSpeed] Cannot redefine value property for size component, using fallback');
+        // Fallback: widget already has a non-configurable value property (e.g., from ComfyUI during workflow restore)
+        // Use getValue/setValue methods instead - this is expected behavior and works correctly
         widget.getValue = function() {
             const val = input.value;
             return val === '' ? '' : (parseInt(val) || '');

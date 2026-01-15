@@ -268,7 +268,7 @@ async function createBasicUI(node, apiModule, utilsModule) {
 
         // Preload model data
         const preloadContainer = document.createElement('div');
-        preloadContainer.textContent = '⏳ Loading models...';
+        preloadContainer.textContent = '⏳ Loading models (first time may take 5-10 seconds)...';
         preloadContainer.style.padding = '10px';
         preloadContainer.style.color = '#4a9eff';
         preloadContainer.style.textAlign = 'center';
@@ -279,21 +279,16 @@ async function createBasicUI(node, apiModule, utilsModule) {
         try {
             const preloadData = await apiModule.preloadAllModels((progress) => {
                 if (progress.step === 'categories') {
-                    preloadContainer.textContent = `⏳ Loaded ${progress.current} categories...`;
+                    preloadContainer.textContent = `⏳ Loading categories (${progress.current})...`;
                 } else if (progress.step === 'models') {
-                    preloadContainer.textContent = `⏳ Loaded ${progress.total} models...`;
+                    preloadContainer.textContent = `⏳ Loading ${progress.total} models (cached after first load)...`;
                 }
             });
-
-            console.log('[WaveSpeed Predictor] Preload result:', preloadData);
 
             if (preloadData) {
                 node.wavespeedState.categoryList = preloadData.categories;
                 node.wavespeedState.allModels = preloadData.flatModels;
                 node.wavespeedState.modelsByCategory = preloadData.modelsByCategory;
-                
-                console.log('[WaveSpeed Predictor] Categories loaded:', node.wavespeedState.categoryList?.length);
-                console.log('[WaveSpeed Predictor] Models loaded:', node.wavespeedState.allModels?.length);
             } else {
                 console.error('[WaveSpeed Predictor] Preload returned null');
             }
@@ -439,7 +434,6 @@ async function createBasicUI(node, apiModule, utilsModule) {
         tabsWrapper.appendChild(allTab);
 
         // Add category tabs
-        console.log('[WaveSpeed Predictor] Creating category tabs, categoryList:', node.wavespeedState.categoryList);
         if (node.wavespeedState.categoryList && node.wavespeedState.categoryList.length > 0) {
             for (const category of node.wavespeedState.categoryList) {
                 const tab = createCategoryTabButton(category.name, category.value, false, node, utilsModule, tabsWrapper);
@@ -451,9 +445,6 @@ async function createBasicUI(node, apiModule, utilsModule) {
 
         categoryTabsContainer.appendChild(tabsWrapper);
         mainContainer.appendChild(categoryTabsContainer);
-        
-        console.log('[WaveSpeed Predictor] mainContainer children:', mainContainer.children.length);
-        console.log('[WaveSpeed Predictor] tabsWrapper children:', tabsWrapper.children.length);
         
         // Save reference for later updates
         node._categoryTabsWrapper = tabsWrapper;
@@ -487,17 +478,6 @@ async function createBasicUI(node, apiModule, utilsModule) {
 
         // Add main container as single DOM widget (serialize: false to prevent ComfyUI auto-serialization)
         const mainWidget = node.addDOMWidget('wavespeed_main', 'div', mainContainer, { serialize: false });
-
-        console.log('[WaveSpeed Predictor] mainWidget created:', mainWidget);
-        console.log('[WaveSpeed Predictor] mainWidget.element:', mainWidget.element);
-        console.log('[WaveSpeed Predictor] mainContainer.parentNode (immediate):', mainContainer.parentNode);
-        
-        // Wait for DOM to be mounted in Canvas mode
-        await new Promise(resolve => setTimeout(resolve, 100));
-        console.log('[WaveSpeed Predictor] mainContainer.parentNode (after 100ms):', mainContainer.parentNode);
-        
-        await new Promise(resolve => requestAnimationFrame(resolve));
-        console.log('[WaveSpeed Predictor] mainContainer.parentNode (after RAF):', mainContainer.parentNode);
 
         // CRITICAL FIX: Set all flags explicitly
         mainWidget._wavespeed_base = true;
@@ -720,8 +700,6 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
             // Canvas mode doesn't automatically remove DOM when widget is removed from array
             // In Vue mode, Vue manages the DOM, so we should NOT remove elements manually
             const isCanvasMode = !LiteGraph.vueNodesMode;
-            console.log('[WaveSpeed] Cleaning widgets, isCanvasMode:', isCanvasMode);
-            console.log('[WaveSpeed] Widgets before cleanup:', node.widgets?.length);
             
             if (isCanvasMode) {
                 let removedCount = 0;
@@ -788,7 +766,8 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         for (const param of parameters) {
             const originalType = parametersModule.getOriginalApiType(param);
             const isArray = param.isArray || parametersModule.isArrayParameter(param.name, originalType);
-            const isSize = parametersModule.isSizeParameter(param.name);
+            const isSizeEnum = parametersModule.isSizeEnum(param);
+            const isSizeRange = parametersModule.isSizeRange(param);
 
             if (isArray) {
                 // Check if this is an object array (e.g., bbox_condition with height/length/width)
@@ -882,9 +861,12 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
                         arrayParamGroups[param.name].expandedNames.push(expandedName);
                     }
                 }
-            } else if (isSize) {
-                // Size parameter: expand to ratio buttons + width + height
-                console.log('[WaveSpeed Predictor] Expanding size parameter:', param.name);
+            } else if (isSizeEnum) {
+                // Size parameter with enum: treat as COMBO (dropdown), don't split
+                expandedParams.push(param);
+            } else if (isSizeRange) {
+                // Size parameter with range: expand to ratio buttons + width + height
+                console.log('[WaveSpeed Predictor] Expanding range size parameter:', param.name);
                 
                 // Create shared state for width/height widgets (for ratio buttons)
                 const sizeSharedState = {
@@ -1573,12 +1555,10 @@ async function loadModelParameters(node, modelValue, apiModule, isRestoring = fa
         //   - First matching container would be replaced multiple times
         // Solution: Use data-widget-name attribute for precise matching
         const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
-        console.log('[WaveSpeed DEBUG] nodeElement:', nodeElement);
         if (nodeElement && node.widgets) {
             // Only process widgets that have input/textarea (skip array-title, etc.)
             const inputWidgets = node.widgets.filter(w => {
                 if (!w._wavespeed_dynamic || !w.element || w._wavespeed_array_title || w._wavespeed_size_title || w._wavespeed_no_input) {
-                    console.log('[WaveSpeed DEBUG] Skipping widget:', w);
                     return false;
                 }
                 // Check if widget has input/textarea

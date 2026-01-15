@@ -149,11 +149,11 @@ export function parseModelParameters(inputSchema) {
         }
 
         // Special handling for size parameters (type: string, but may have size constraints)
-        if (isSizeParameter(propName)) {
+        // Only apply min/max for range-type size (not enum-type size)
+        if (isSizeParameter(propName) && !param.options) {
             // Extract min/max from API, fallback to defaults (256-2048)
             param.min = prop.minimum !== undefined ? prop.minimum : 256;
             param.max = prop.maximum !== undefined ? prop.maximum : 2048;
-            console.log(`[WaveSpeed] Size parameter "${propName}": min=${param.min}, max=${param.max}, default=${param.default}, xHidden=${param.xHidden}`);
         }
 
         // Extract maxItems info and detect object array (e.g., bbox_condition with height/length/width)
@@ -167,12 +167,7 @@ export function parseModelParameters(inputSchema) {
             if (!isLorasParam && prop.items && prop.items.type === 'object' && prop.items.properties) {
                 param.isObjectArray = true;
                 param.objectProperties = Object.keys(prop.items.properties);
-                console.log(`[WaveSpeed] Object array parameter "${propName}": properties = ${param.objectProperties.join(', ')}`);
-            } else if (isLorasParam) {
-                console.log(`[WaveSpeed] Loras parameter "${propName}": forced to string array (with input slots)`);
             }
-            
-            console.log(`[WaveSpeed] Array parameter "${propName}": API maxItems = ${prop.maxItems}, Limited to = ${param.maxItems}`);
         }
 
         parameters.push(param);
@@ -204,6 +199,16 @@ export function isSizeParameter(paramName) {
     return lowerName === 'size' ||
            lowerName === 'image_size' ||
            lowerName === 'output_size';
+}
+
+// Check if size parameter is enum type (dropdown with fixed options)
+export function isSizeEnum(param) {
+    return isSizeParameter(param.name) && param.options && param.options.length > 0;
+}
+
+// Check if size parameter is range type (flexible width/height inputs)
+export function isSizeRange(param) {
+    return isSizeParameter(param.name) && (!param.options || param.options.length === 0);
 }
 
 // Detect file input type
