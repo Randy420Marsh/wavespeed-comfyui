@@ -360,11 +360,6 @@ class WaveSpeedAIPreview:
             print(f"[WaveSpeed Preview] Failed to convert video URL to video input: {e}")
             return None
 
-    @classmethod
-    def IS_CHANGED(cls, **kwargs):
-        # Always re-execute to show latest media
-        return float("nan")
-
 
 NODE_CLASS_MAPPINGS = {
     "WaveSpeedAI Preview": WaveSpeedAIPreview,

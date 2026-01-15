@@ -1257,10 +1257,6 @@ class WaveSpeedAIPredictor:
         url_lower = url.lower()
         return any(ext in url_lower for ext in ['.glb', '.gltf', '.obj', '.ply', '.fbx', '.stl', '.usdz', '.dae', '.3ds'])
 
-    @classmethod
-    def IS_CHANGED(cls, **_):
-        return float("nan")
-
 
 NODE_CLASS_MAPPINGS = {
     "WaveSpeedAIPredictor": WaveSpeedAIPredictor,

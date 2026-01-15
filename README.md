@@ -151,6 +151,8 @@ https://github.com/user-attachments/assets/c6f5383b-2b80-4166-b9ea-dcfe406884b6
 
 🎬 **Animate Static Images**
 
+<img src="examples/case4-image-to-video/case4_i2v.png" width="600">
+
 **Use Case:** Bring static images to life with motion
 
 **Models:** Stable Video Diffusion, I2VGen-XL, etc.
