@@ -44,6 +44,8 @@ Support for **20+ AI generation categories** including:
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI) installed
 - [WaveSpeed AI API Key](https://wavespeed.ai) (free tier available)
 
+> 💡 **Built on**: ComfyUI v0.8.2 (Frontend v1.35.9)
+
 ### Installation Steps
 
 ```bash
