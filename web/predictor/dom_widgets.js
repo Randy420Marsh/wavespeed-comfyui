@@ -332,31 +332,6 @@ export function createSizeAxisDom(labelText, value, min, max, onInput, onBlur) {
     return { container, input };
 }
 
-export function showSizeToast(message, anchorEl) {
-    if (!anchorEl || !anchorEl.ownerDocument) return;
-    const doc = anchorEl.ownerDocument;
-    const rect = anchorEl.getBoundingClientRect();
-    const toast = doc.createElement('div');
-    toast.textContent = message;
-    toast.style.position = 'fixed';
-    toast.style.left = `${Math.max(8, rect.left)}px`;
-    toast.style.top = `${Math.max(8, rect.top - 28)}px`;
-    toast.style.padding = '4px 8px';
-    toast.style.background = '#1f1f1f';
-    toast.style.color = '#f1f1f1';
-    toast.style.border = '1px solid #b04a4a';
-    toast.style.borderRadius = '4px';
-    toast.style.fontSize = '11px';
-    toast.style.zIndex = '9999';
-    toast.style.pointerEvents = 'none';
-    doc.body.appendChild(toast);
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.parentNode.removeChild(toast);
-        }
-    }, 1800);
-}
-
 // Create COMBO (dropdown) DOM widget
 export function createComboDomWidget(node, param) {
     const options = param.options || [];

@@ -17,6 +17,35 @@ const SIZE_RATIO_PRESETS = [
 ];
 
 /**
+ * Show toast notification near an element
+ */
+function showSizeToast(message, anchorEl) {
+    if (!anchorEl || !anchorEl.ownerDocument) return;
+    const doc = anchorEl.ownerDocument;
+    const rect = anchorEl.getBoundingClientRect();
+    const toast = doc.createElement('div');
+    toast.textContent = message;
+    toast.style.position = 'fixed';
+    toast.style.left = `${Math.max(8, rect.left)}px`;
+    toast.style.top = `${Math.max(8, rect.top - 28)}px`;
+    toast.style.padding = '4px 8px';
+    toast.style.background = '#1f1f1f';
+    toast.style.color = '#f1f1f1';
+    toast.style.border = '1px solid #b04a4a';
+    toast.style.borderRadius = '4px';
+    toast.style.fontSize = '11px';
+    toast.style.zIndex = '9999';
+    toast.style.pointerEvents = 'none';
+    doc.body.appendChild(toast);
+    
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 1800);
+}
+
+/**
  * Create ratio buttons widget (separate widget, no input slot)
  */
 export function createRatioButtonsWidget(node, param, sharedState) {
@@ -27,6 +56,14 @@ export function createRatioButtonsWidget(node, param, sharedState) {
     container.style.gap = '4px';
     container.style.marginBottom = '4px';
     container.style.marginLeft = '12px';  // Indent like array items
+    container.style.alignItems = 'center';
+    container.style.justifyContent = 'space-between';
+    
+    // Left side: ratio buttons
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.style.display = 'flex';
+    buttonsContainer.style.flexWrap = 'wrap';
+    buttonsContainer.style.gap = '4px';
     
     sharedState.ratioButtons = [];
     
@@ -74,8 +111,27 @@ export function createRatioButtonsWidget(node, param, sharedState) {
         btn.addEventListener('mousedown', (e) => e.stopPropagation());
         
         sharedState.ratioButtons.push(btn);
-        container.appendChild(btn);
+        buttonsContainer.appendChild(btn);
     });
+    
+    container.appendChild(buttonsContainer);
+    
+    // Right side: range display
+    const rangeDisplay = document.createElement('span');
+    rangeDisplay.className = 'wavespeed-size-range';
+    rangeDisplay.style.color = '#666';
+    rangeDisplay.style.fontSize = '10px';
+    rangeDisplay.style.whiteSpace = 'nowrap';
+    rangeDisplay.style.marginLeft = 'auto';
+    rangeDisplay.style.paddingLeft = '8px';
+    
+    // Get min/max from param (should be passed from parent)
+    const minSize = param.min !== undefined ? param.min : 256;
+    const maxSize = param.max !== undefined ? param.max : 2048;
+    rangeDisplay.textContent = `Range: ${minSize}-${maxSize}`;
+    rangeDisplay.title = `Supported size range: ${minSize}px to ${maxSize}px`;
+    
+    container.appendChild(rangeDisplay);
     
     const widget = node.addDOMWidget(`${param.parentSizeName}_ratios`, 'div', container, { serialize: false });
     
@@ -276,8 +332,19 @@ export function createSizeComponentWidget(node, param, sharedState) {
             return;
         }
         
+        const minSize = param.min || 256;
+        const maxSize = param.max || 2048;
+        const originalVal = val;
+        
         // Clamp to min/max
-        val = Math.max(param.min || 256, Math.min(param.max || 2048, val));
+        val = Math.max(minSize, Math.min(maxSize, val));
+        
+        // Show toast if value was out of range
+        if (originalVal < minSize || originalVal > maxSize) {
+            const componentName = isWidth ? 'Width' : 'Height';
+            showSizeToast(`${componentName} must be between ${minSize} and ${maxSize}`, input);
+        }
+        
         // Align to multiples of 8
         val = Math.round(val / 8) * 8;
         input.value = val;
@@ -294,18 +361,11 @@ export function createSizeComponentWidget(node, param, sharedState) {
         return [node.size[0] - 20, 30];  // Same height as array items
     };
     
-    // Initialize value
-    const existingValue = node.wavespeedState.parameterValues[param.name];
-    if (existingValue !== undefined) {
-        if (widget.setValue) {
-            widget.setValue(existingValue);
-        } else {
-            widget.value = existingValue;
-        }
-    } else {
-        const currentValue = widget.getValue ? widget.getValue() : widget.value;
-        node.wavespeedState.parameterValues[param.name] = currentValue;
-    }
+    // Initialize value - CRITICAL: Don't read from parameterValues for size components
+    // Size components should always use param.default on creation to avoid stale values
+    // The parameterValues will be updated by updateParentValue() after both width and height are created
+    const currentValue = widget.getValue ? widget.getValue() : widget.value;
+    node.wavespeedState.parameterValues[param.name] = currentValue;
     
     // Update connection state handler
     widget.updateConnectionState = function() {

@@ -1010,7 +1010,8 @@ class WaveSpeedAIPredictor:
 
             print(f"[WaveSpeed Predictor] Filtered parameters: {filtered_params}")
 
-            # Validate size parameters: if size_width or size_height exists, both must exist
+            # Handle size parameters: if size_width or size_height exists in kwargs (from connections),
+            # use them to override the corresponding component in the size parameter
             size_params = {}
             for key in list(filtered_params.keys()):
                 if key.endswith('_width') or key.endswith('_height'):
@@ -1020,15 +1021,51 @@ class WaveSpeedAIPredictor:
                     component = key.rsplit('_', 1)[1]
                     size_params[size_name][component] = filtered_params[key]
             
-            # Check each size parameter
+            # Process each size parameter
             for size_name, components in size_params.items():
                 has_width = 'width' in components
                 has_height = 'height' in components
                 
-                if has_width and not has_height:
-                    raise ValueError(f"Size parameter '{size_name}': Width is provided but Height is missing. Please provide both or leave both empty.")
-                elif has_height and not has_width:
-                    raise ValueError(f"Size parameter '{size_name}': Height is provided but Width is missing. Please provide both or leave both empty.")
+                # Get the base size parameter from UI (should be in format "width*height")
+                base_size = filtered_params.get(size_name, '')
+                
+                if base_size:
+                    # Parse base size to get UI values
+                    try:
+                        ui_width, ui_height = base_size.split('*')
+                        ui_width = int(ui_width.strip())
+                        ui_height = int(ui_height.strip())
+                    except:
+                        # If parsing fails, use connected values or raise error
+                        if has_width and has_height:
+                            ui_width = components['width']
+                            ui_height = components['height']
+                        else:
+                            raise ValueError(f"Size parameter '{size_name}': Cannot parse UI size value '{base_size}'")
+                    
+                    # Override with connected values if available
+                    final_width = components.get('width', ui_width)
+                    final_height = components.get('height', ui_height)
+                    
+                    # Update size parameter with final values
+                    filtered_params[size_name] = f"{final_width}*{final_height}"
+                    
+                    # Remove component parameters (they were only for overriding)
+                    filtered_params.pop(f'{size_name}_width', None)
+                    filtered_params.pop(f'{size_name}_height', None)
+                    
+                    print(f"[WaveSpeed Predictor] Size parameter '{size_name}': width={final_width} (from {'connection' if has_width else 'UI'}), height={final_height} (from {'connection' if has_height else 'UI'})")
+                else:
+                    # No base size from UI, must have both components from connections
+                    if has_width and has_height:
+                        final_width = components['width']
+                        final_height = components['height']
+                        filtered_params[size_name] = f"{final_width}*{final_height}"
+                        filtered_params.pop(f'{size_name}_width', None)
+                        filtered_params.pop(f'{size_name}_height', None)
+                        print(f"[WaveSpeed Predictor] Size parameter '{size_name}': {final_width}*{final_height} (both from connections)")
+                    else:
+                        raise ValueError(f"Size parameter '{size_name}': No UI size value and incomplete connection values")
 
             # Step 2: Submit task to API
             print(f"[WaveSpeed Predictor] Step 2: Submitting task to API")

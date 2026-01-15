@@ -5,7 +5,6 @@
 import { getMediaType, getOriginalApiType } from './parameters.js';
 import { createFilePreview, createLoadingPreview, createErrorPreview, createUploadButton, uploadToWaveSpeed } from './media.js';
 import { 
-    showSizeToast,
     createComboDomWidget,
     createToggleDomWidget,
     createNumberDomWidget,
@@ -174,395 +173,11 @@ function createDescriptionElement(description) {
     return null;
 }
 
-// Size ratio presets
-const SIZE_RATIO_PRESETS = [
-    { label: '1:1', icon: '□', width: 1024, height: 1024 },
-    { label: '16:9', icon: '▭', width: 1344, height: 756 },
-    { label: '9:16', icon: '▯', width: 756, height: 1344 },
-    { label: '4:3', icon: '□', width: 1152, height: 864 },
-    { label: '3:4', icon: '▯', width: 864, height: 1152 },
-    { label: '3:2', icon: '▭', width: 1216, height: 832 },
-    { label: '2:3', icon: '▯', width: 832, height: 1216 },
-];
-
-// Create Size selector widget
-export function createSizeWidget(node, param) {
-    const container = document.createElement('div');
-    container.className = 'wavespeed-size-selector';
-    container.setAttribute('data-widget-name', param.name); // For precise DOM matching
-
-    let currentWidth = 1024;
-    let currentHeight = 1024;
-    let currentRatio = '1:1';
-    // CRITICAL FIX: Use API's minimum/maximum constraints, not hardcoded defaults
-    // Use !== undefined check instead of || to handle 0 values correctly
-    const minSize = param.min !== undefined ? param.min : 256;
-    const maxSize = param.max !== undefined ? param.max : 1536;
-
-    // Parse default value or handle x-hidden
-    if (param.xHidden === true) {
-        // x-hidden: only use API default values, otherwise keep null (empty)
-        if (param.default) {
-            const match = param.default.match(/(\d+)\s*[*x×]\s*(\d+)/i);
-            if (match) {
-                currentWidth = parseInt(match[1]);
-                currentHeight = parseInt(match[2]);
-            } else {
-                currentWidth = null;
-                currentHeight = null;
-            }
-        } else {
-            currentWidth = null;
-            currentHeight = null;
-        }
-    } else {
-        // non x-hidden: use default values or fallback to 1024
-        if (param.default) {
-            const match = param.default.match(/(\d+)\s*[*x×]\s*(\d+)/i);
-            if (match) {
-                currentWidth = parseInt(match[1]);
-                currentHeight = parseInt(match[2]);
-            }
-        }
-    }
-
-    // Header with title and range (no collapse functionality)
-    const header = document.createElement('div');
-    header.className = 'wavespeed-size-header';
-    header.style.display = 'flex';
-    header.style.alignItems = 'center';
-    header.style.gap = '8px';
-    header.style.padding = '8px 10px';
-    header.style.backgroundColor = '#2a2a2a';
-    header.style.border = '1px solid #444';
-    header.style.borderRadius = '4px 4px 0 0';
-
-    const titleLabel = createLabelWithRequired(param.displayName || 'Size', param.required, param.description);
-    titleLabel.style.color = '#e0e0e0';
-    titleLabel.style.fontSize = '12px';
-    titleLabel.style.fontWeight = '500';
-
-    const rangeInfo = document.createElement('span');
-    rangeInfo.className = 'wavespeed-size-range';
-    rangeInfo.textContent = `Range: ${minSize} - ${maxSize}`;
-    rangeInfo.style.marginLeft = 'auto';
-    rangeInfo.style.color = '#666';
-    rangeInfo.style.fontSize = '11px';
-
-    header.appendChild(titleLabel);
-    header.appendChild(rangeInfo);
-
-    // Content area (always expanded)
-    const content = document.createElement('div');
-    content.className = 'wavespeed-size-content';
-    content.style.display = 'flex';
-    content.style.flexDirection = 'column';
-    content.style.gap = '8px';
-    content.style.padding = '10px';
-    content.style.backgroundColor = '#2a2a2a';
-    content.style.border = '1px solid #444';
-    content.style.borderTop = 'none';
-    content.style.borderRadius = '0 0 4px 4px';
-    
-    // Ratio buttons row
-    const ratioRow = document.createElement('div');
-    ratioRow.className = 'wavespeed-size-ratios';
-    ratioRow.style.display = 'flex';
-    ratioRow.style.flexWrap = 'wrap';
-    ratioRow.style.gap = '4px';
-    
-    const ratioButtons = [];
-    SIZE_RATIO_PRESETS.forEach(preset => {
-        const btn = document.createElement('button');
-        btn.className = 'wavespeed-ratio-btn';
-        btn.dataset.ratio = preset.label;
-        btn.innerHTML = `<span class="ratio-icon" style="font-size:10px;opacity:0.7;">${preset.icon}</span><span class="ratio-label" style="font-weight:500;">${preset.label}</span>`;
-        btn.title = `${preset.width} × ${preset.height}`;
-        btn.style.display = 'flex';
-        btn.style.alignItems = 'center';
-        btn.style.gap = '4px';
-        btn.style.padding = '4px 8px';
-        btn.style.backgroundColor = preset.label === currentRatio ? '#4a9eff' : '#2a2a2a';
-        btn.style.color = preset.label === currentRatio ? 'white' : '#e0e0e0';
-        btn.style.border = '1px solid ' + (preset.label === currentRatio ? '#4a9eff' : '#444');
-        btn.style.borderRadius = '4px';
-        btn.style.cursor = 'pointer';
-        btn.style.fontSize = '11px';
-        btn.style.transition = 'all 0.2s ease';
-        
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            selectRatio(preset);
-        });
-        
-        btn.addEventListener('mousedown', (e) => e.stopPropagation());
-        
-        ratioButtons.push(btn);
-        ratioRow.appendChild(btn);
-    });
-    
-    // Width row
-    const widthRow = document.createElement('div');
-    widthRow.className = 'wavespeed-size-width-row';
-    widthRow.style.display = 'flex';
-    widthRow.style.alignItems = 'center';
-    widthRow.style.gap = '8px';
-    widthRow.style.padding = '0 10px';
-
-    const widthLabel = document.createElement('label');
-    widthLabel.textContent = 'Width';
-    widthLabel.style.color = '#888';
-    widthLabel.style.fontSize = '11px';
-    widthLabel.style.minWidth = '48px';
-
-    const widthInput = document.createElement('input');
-    widthInput.type = 'number';
-    widthInput.className = 'wavespeed-size-input';
-    widthInput.value = currentWidth;
-    widthInput.min = minSize;
-    widthInput.max = maxSize;
-    widthInput.step = 8;
-    widthInput.style.flex = '1';
-    widthInput.style.padding = '6px 10px';
-    widthInput.style.backgroundColor = '#2a2a2a';
-    widthInput.style.color = '#e0e0e0';
-    widthInput.style.border = '1px solid #444';
-    widthInput.style.borderRadius = '4px';
-    widthInput.style.fontSize = '13px';
-    widthInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    widthInput.style.textAlign = 'center';
-    widthInput.style.boxSizing = 'border-box';
-
-    widthRow.appendChild(widthLabel);
-    widthRow.appendChild(widthInput);
-
-    // Height row
-    const heightRow = document.createElement('div');
-    heightRow.className = 'wavespeed-size-height-row';
-    heightRow.style.display = 'flex';
-    heightRow.style.alignItems = 'center';
-    heightRow.style.gap = '8px';
-    heightRow.style.padding = '0 10px';
-
-    const heightLabel = document.createElement('label');
-    heightLabel.textContent = 'Height';
-    heightLabel.style.color = '#888';
-    heightLabel.style.fontSize = '11px';
-    heightLabel.style.minWidth = '48px';
-
-    const heightInput = document.createElement('input');
-    heightInput.type = 'number';
-    heightInput.className = 'wavespeed-size-input';
-    heightInput.value = currentHeight;
-    heightInput.min = minSize;
-    heightInput.max = maxSize;
-    heightInput.step = 8;
-    heightInput.style.flex = '1';
-    heightInput.style.padding = '6px 10px';
-    heightInput.style.backgroundColor = '#2a2a2a';
-    heightInput.style.color = '#e0e0e0';
-    heightInput.style.border = '1px solid #444';
-    heightInput.style.borderRadius = '4px';
-    heightInput.style.fontSize = '13px';
-    heightInput.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    heightInput.style.textAlign = 'center';
-    heightInput.style.boxSizing = 'border-box';
-
-    heightRow.appendChild(heightLabel);
-    heightRow.appendChild(heightInput);
-
-    // Assemble content area (removed infoRow with sizeDisplay and rangeInfo)
-    content.appendChild(ratioRow);
-    content.appendChild(widthRow);
-    content.appendChild(heightRow);
-
-    // Assemble container
-    container.appendChild(header);
-    container.appendChild(content);
-
-    // Event handler functions (removed toggleExpand function)
-    function selectRatio(preset) {
-        currentRatio = preset.label;
-        currentWidth = preset.width;
-        currentHeight = preset.height;
-
-        widthInput.value = currentWidth;
-        heightInput.value = currentHeight;
-
-        // Update button state
-        ratioButtons.forEach(btn => {
-            const isActive = btn.dataset.ratio === preset.label;
-            btn.style.backgroundColor = isActive ? '#4a9eff' : '#2a2a2a';
-            btn.style.color = isActive ? 'white' : '#e0e0e0';
-            btn.style.borderColor = isActive ? '#4a9eff' : '#444';
-        });
-
-        notifyChange();
-    }
-
-    function onInputChange() {
-        currentWidth = parseInt(widthInput.value) || minSize;
-        currentHeight = parseInt(heightInput.value) || minSize;
-
-        updateRatioButtons();
-    }
-
-    function validateAndNotify() {
-        // Validate range and show toast if out of range
-        const originalWidth = currentWidth;
-        const originalHeight = currentHeight;
-
-        currentWidth = Math.max(minSize, Math.min(maxSize, currentWidth));
-        currentHeight = Math.max(minSize, Math.min(maxSize, currentHeight));
-
-        // Show toast if value was out of range
-        if (originalWidth < minSize || originalWidth > maxSize) {
-            showSizeToast(`Width must be between ${minSize} and ${maxSize}`, widthInput);
-        }
-        if (originalHeight < minSize || originalHeight > maxSize) {
-            showSizeToast(`Height must be between ${minSize} and ${maxSize}`, heightInput);
-        }
-
-        // Align to multiples of 8
-        currentWidth = Math.round(currentWidth / 8) * 8;
-        currentHeight = Math.round(currentHeight / 8) * 8;
-
-        widthInput.value = currentWidth;
-        heightInput.value = currentHeight;
-
-        updateRatioButtons();
-        notifyChange();
-    }
-
-    function updateRatioButtons() {
-        const ratio = currentWidth / currentHeight;
-        let matchedRatio = null;
-
-        for (const preset of SIZE_RATIO_PRESETS) {
-            const presetRatio = preset.width / preset.height;
-            if (Math.abs(ratio - presetRatio) < 0.01) {
-                matchedRatio = preset.label;
-                break;
-            }
-        }
-
-        currentRatio = matchedRatio;
-        ratioButtons.forEach(btn => {
-            const isActive = btn.dataset.ratio === matchedRatio;
-            btn.style.backgroundColor = isActive ? '#4a9eff' : '#2a2a2a';
-            btn.style.color = isActive ? 'white' : '#e0e0e0';
-            btn.style.borderColor = isActive ? '#4a9eff' : '#444';
-        });
-    }
-
-    function notifyChange() {
-        const value = currentWidth && currentHeight ? `${currentWidth}*${currentHeight}` : '';
-        // Don't send empty size values to backend (for x-hidden support)
-        if (value === '') {
-            delete node.wavespeedState.parameterValues[param.name];
-        } else {
-            node.wavespeedState.parameterValues[param.name] = value;
-        }
-        updateRequestJson(node);
-    }
-
-    // Event listeners (removed header click for toggle)
-    widthInput.addEventListener('input', onInputChange);
-    heightInput.addEventListener('input', onInputChange);
-    widthInput.addEventListener('blur', validateAndNotify);
-    heightInput.addEventListener('blur', validateAndNotify);
-    widthInput.addEventListener('click', (e) => e.stopPropagation());
-    heightInput.addEventListener('click', (e) => e.stopPropagation());
-    widthInput.addEventListener('mousedown', (e) => e.stopPropagation());
-    heightInput.addEventListener('mousedown', (e) => e.stopPropagation());
-
-    // Create widget (serialize: false to prevent ComfyUI auto-serialization)
-    const widget = node.addDOMWidget(param.name, 'div', container, { serialize: false });
-
-    widget._wavespeed_dynamic = true;
-    widget._wavespeed_param = param.name;
-    widget._wavespeed_size = true; // Mark as size widget
-
-    // Save UI element references for connection state handling
-    widget._widthInput = widthInput;
-    widget._heightInput = heightInput;
-    widget._ratioButtons = ratioButtons;
-
-    // Custom computeSize method (always expanded now)
-    widget.computeSize = function() {
-        // Always expanded: header + content height (~150px)
-        const expandedHeight = 150;
-        return [node.size[0] - 20, expandedHeight];
-    };
-
-    // Define value property
-    const descriptor = Object.getOwnPropertyDescriptor(widget, 'value');
-    if (!descriptor || descriptor.configurable) {
-        try {
-            Object.defineProperty(widget, 'value', {
-                get() {
-                    return currentWidth && currentHeight ? `${currentWidth}*${currentHeight}` : '';
-                },
-                set(val) {
-                    if (!val) {
-                        currentWidth = null;
-                        currentHeight = null;
-                        widthInput.value = '';
-                        heightInput.value = '';
-                        return;
-                    }
-                    const match = val.match(/(\d+)\s*[*x×]\s*(\d+)/i);
-                    if (match) {
-                        currentWidth = parseInt(match[1]);
-                        currentHeight = parseInt(match[2]);
-                        widthInput.value = currentWidth;
-                        heightInput.value = currentHeight;
-                        updateRatioButtons();
-                    }
-                },
-                enumerable: true,
-                configurable: true
-            });
-        } catch (e) {
-            console.warn('[WaveSpeed] Could not define value property for size widget:', e.message);
-            widget.value = `${currentWidth}*${currentHeight}`;
-        }
-    } else {
-        // Use existing value property
-        widget.value = `${currentWidth}*${currentHeight}`;
-    }
-
-    // Initialize parameter value
-    // Don't initialize if x-hidden and no default (keep undefined)
-    if (currentWidth && currentHeight) {
-        node.wavespeedState.parameterValues[param.name] = `${currentWidth}*${currentHeight}`;
-    }
-
-    // Add restoreValue method for workflow restoration
-    widget.restoreValue = createRestoreValueFn(node, param, function(val) {
-        // Parse "256*1536" format
-        const match = val.match(/(\d+)\s*[*x×]\s*(\d+)/i);
-        if (match) {
-            currentWidth = parseInt(match[1]);
-            currentHeight = parseInt(match[2]);
-            widthInput.value = currentWidth;
-            heightInput.value = currentHeight;
-            updateRatioButtons();
-        }
-    });
-
-    return widget;
-}
-
-// Check if parameter is a size parameter (only match specific size param names, not resolution)
-function isSizeParameter(paramName) {
-    const lowerName = paramName.toLowerCase();
-    // Only match explicit size parameters, not resolution
-    return lowerName === 'size' || 
-           lowerName === 'image_size' || 
-           lowerName === 'output_size';
-    // Removed 'resolution' and endsWith('_size') matching
-}
+// DEPRECATED: Old size widget implementation (replaced by createSizeComponentWidget)
+// This function is no longer used because size parameters are now split into
+// separate width/height components in wavespeed_predictor.js (line ~880-1000)
+// The new implementation supports independent connections for width and height.
+// Kept for reference only - can be removed in future cleanup.
 
 // Check if parameter is a prompt parameter (needs multiline textarea)
 function isPromptParameter(paramName) {
@@ -1172,6 +787,7 @@ export function createSeedWidget(node, param) {
     widget._wavespeed_param = param.name;
     widget._wavespeed_seed = true;
     widget._wavespeed_label_offset = 24; // Seed widget has label row
+    widget.inputEl = seedInput; // Store reference for connection state updates
 
     // Save seed control state
     widget._seedMode = currentMode;
@@ -1308,7 +924,7 @@ export function createPromptWidget(node, param) {
     widget._wavespeed_dynamic = true;
     widget._wavespeed_param = param.name;
     widget._wavespeed_label_offset = 20; // Prompt widget has label row
-    // Note: Removed widget.inputEl to unify restoration via restoreValue method
+    widget.inputEl = textarea; // Store reference for connection state updates
 
     // Custom computeSize
     widget.computeSize = function() {
@@ -1997,11 +1613,6 @@ export function createParameterWidget(node, param) {
         return createComboDomWidget(node, param);
     }
 
-    // Check if size parameter (only for range-type size, not COMBO)
-    if (isSizeParameter(paramName)) {
-        return createSizeWidget(node, param);
-    }
-
     // Check if parameter is a prompt parameter (needs multiline textarea)
     if (isPromptParameter(paramName) && param.type === "STRING") {
         return createPromptWidget(node, param);
@@ -2108,6 +1719,38 @@ export function updateRequestJson(node) {
             }
             continue;
         }
+        
+        // Check if this is a string array item for loras (forced to string array instead of object array)
+        // Format: "path:scale" or just "path" (default scale=1.0)
+        if (param.isArrayItem && param.parentArrayName && param.parentArrayName.toLowerCase().includes('lora')) {
+            const parentArrayName = param.parentArrayName;
+            if (!objectArrayGroups[parentArrayName]) {
+                objectArrayGroups[parentArrayName] = [];
+            }
+            const itemValue = node.wavespeedState.parameterValues[paramName];
+            if (itemValue && typeof itemValue === 'string' && itemValue.trim() !== '') {
+                // Parse "path:scale" format, or use default scale=1.0
+                const trimmed = itemValue.trim();
+                let loraObject;
+                if (trimmed.includes(':')) {
+                    const parts = trimmed.split(':');
+                    const path = parts[0].trim();
+                    const scale = parseFloat(parts[1].trim());
+                    loraObject = {
+                        path: path,
+                        scale: isNaN(scale) ? 1.0 : scale
+                    };
+                } else {
+                    loraObject = {
+                        path: trimmed,
+                        scale: 1.0
+                    };
+                }
+                const arrayIndex = param.arrayIndex !== undefined ? param.arrayIndex : objectArrayGroups[parentArrayName].length;
+                objectArrayGroups[parentArrayName][arrayIndex] = loraObject;
+            }
+            continue;
+        }
 
         // Check if there is a connection
         const inputSlot = node.inputs?.find(inp => inp.name === paramName);
@@ -2154,11 +1797,13 @@ export function updateRequestJson(node) {
         const width = sizeParams[sizeName].width;
         const height = sizeParams[sizeName].height;
         
-        // Remove component parameters from values
+        // Always remove component parameters from values
+        // They will be sent separately if connected (via kwargs)
         delete values[`${sizeName}_width`];
         delete values[`${sizeName}_height`];
         
-        // Only add size parameter if both width and height have values
+        // Always send size parameter with UI values (as fallback/default)
+        // Backend will override with connected values if available
         if (width !== undefined && width !== null && width !== '' &&
             height !== undefined && height !== null && height !== '') {
             values[sizeName] = `${width}*${height}`;

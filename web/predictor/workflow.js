@@ -1,217 +1,290 @@
 /**
  * WaveSpeed Predictor - Workflow save and restore module
+ * 
+ * This module handles workflow save/restore functionality for the WaveSpeed Predictor node.
+ * It manages serialization of node state and restoration of connections and parameter values.
  */
 
-import { getCachedModelDetail } from './api.js';
-import { parseModelParameters, getMediaType, getOriginalApiType } from './parameters.js';
-import { updateDynamicInputs, setupSingleMediaParameters } from './inputs.js';
-import { createParameterWidget, updateHiddenWidget, updateRequestJson } from './widgets.js';
+/**
+ * Restore input connections after model parameters are fully loaded
+ * 
+ * This function restores the link connections between nodes that were saved in the workflow.
+ * It matches saved input metadata with actual inputs and restores the link IDs.
+ * 
+ * @param {Object} node - The LiteGraph node instance
+ */
+export function restoreInputConnections(node) {
+    const savedInputs = node._wavespeed_savedData?.savedInputs;
+    if (!savedInputs || !node.inputs) {
+        return;
+    }
 
-// Restore workflow data
-export async function restoreWorkflowData(node) {
-    const saved = node._wavespeed_savedData;
-    if (!saved) return;
+    for (const saved of savedInputs) {
+        if (saved.link == null) continue;
 
-    try {
-        console.log('[WaveSpeed] Restoring workflow data:', {
-            modelId: saved.modelId,
-            arrayInputCounts: saved.arrayInputCounts
-        });
-
-        // 1. Restore basic state
-        node.wavespeedState.modelId = saved.modelId || "";
-        node.wavespeedState.apiPath = saved.apiPath || "";
-        node.wavespeedState.category = saved.category || "";
-
-        if (!saved.modelId) {
-            console.warn('[WaveSpeed] No modelId in saved data, skipping restore');
-            delete node._wavespeed_savedData;
-            return;
+        const input = node.inputs.find(inp => inp.name === saved.name);
+        if (!input) {
+            continue;
         }
-
-        // 2. Find matching model option and update Model widget
-        let modelValue = saved.modelId;
-        if (node.modelWidget?.options?.values) {
-            const matchingOption = node.modelWidget.options.values.find(opt =>
-                opt === saved.modelId || opt.endsWith(`> ${saved.modelId}`)
-            );
-            if (matchingOption) {
-                modelValue = matchingOption;
-            }
+        
+        const linkExists = node.graph?.links?.[saved.link];
+        if (linkExists) {
+            input.link = saved.link;
         }
-        if (node.modelWidget) {
-            node.modelWidget.value = modelValue;
-            node.wavespeedState.lastModelValue = modelValue;
-        }
+    }
+}
 
-        // 3. Load model details
-        const modelDetail = await getCachedModelDetail(saved.modelId);
-        if (!modelDetail?.input_schema) {
-            console.error('[WaveSpeed] Failed to load model detail for workflow restore');
-            delete node._wavespeed_savedData;
-            return;
-        }
 
-        // 4. Update API path
-        const apiPath = modelDetail.api_path || `/api/v3/${saved.modelId}`;
-        node.wavespeedState.apiPath = apiPath;
-        updateHiddenWidget(node, 'model_id', apiPath);
+/**
+ * Configure node to support workflow save/restore
+ * 
+ * This function sets up the node's configure() and serialize() methods to handle
+ * workflow save/restore operations. It manages:
+ * - User save detection (Ctrl+S)
+ * - Input connection restoration
+ * - Parameter value restoration
+ * - State serialization
+ * 
+ * @param {Object} node - The LiteGraph node instance
+ * @param {Object} app - The ComfyUI app instance
+ */
+export function configureWorkflowSupport(node, app) {
+    // Setup user save detection
+    if (!window._wavespeedSaveListenerAdded) {
+        window._wavespeedSaveListenerAdded = true;
 
-        // 5. Clear dynamic widgets (don't clear inputs - keep ComfyUI restored connections)
-        if (node.widgets) {
-            node.widgets = node.widgets.filter(w =>
-                w._wavespeed_base ||
-                w._wavespeed_hidden ||
-                w.name === 'Category' ||
-                w.name === 'Model' ||
-                w.name === 'model_id' ||
-                w.name === 'request_json' ||
-                w.name === 'param_map'
-            );
-        }
-
-        // 6. Parse parameters
-        const parameters = parseModelParameters(modelDetail.input_schema);
-        console.log('[WaveSpeed] Parsed parameters:', parameters.length);
-
-        // Separate parameter types
-        const arrayParams = parameters.filter(p => p.isArray);
-        const normalParams = parameters.filter(p => !p.isArray);
-        const mediaParams = normalParams.filter(p => {
-            const mediaType = getMediaType(p.name, getOriginalApiType(p));
-            return mediaType !== 'file';
-        });
-        const nonMediaParams = normalParams.filter(p => {
-            const mediaType = getMediaType(p.name, getOriginalApiType(p));
-            return mediaType === 'file';
-        });
-
-        console.log('[WaveSpeed DEBUG] Parameter classification:');
-        console.log('  - arrayParams:', arrayParams.map(p => p.name));
-        console.log('  - mediaParams:', mediaParams.map(p => p.name));
-        console.log('  - nonMediaParams:', nonMediaParams.map(p => p.name));
-
-        // 7. Create inputs (unified logic)
-        console.log('[WaveSpeed DEBUG] Calling updateDynamicInputs with:', nonMediaParams.map(p => p.name));
-        updateDynamicInputs(node, nonMediaParams);
-        setupSingleMediaParameters(node, mediaParams);
-
-        // 8. Create widgets for non-media parameters
-        node.wavespeedState.parameters = parameters;
-        for (const param of nonMediaParams) {
-            try {
-                createParameterWidget(node, param);
-            } catch (error) {
-                console.error(`[WaveSpeed] Error creating widget for ${param.name}:`, error);
-            }
-        }
-
-        updateRequestJson(node);
-        node.setSize(node.computeSize());
-
-        // 9. Restore parameter values
-        if (saved.requestJsonValue) {
-            try {
-                const requestJson = JSON.parse(saved.requestJsonValue);
-
-                for (const [paramName, paramValue] of Object.entries(requestJson)) {
-                    const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
-                    if (widget) {
-                        if (widget.restoreValue && typeof widget.restoreValue === 'function') {
-                            widget.restoreValue(paramValue);
-                        } else {
-                            widget.value = paramValue;
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                const graph = app.graph;
+                if (graph && graph._nodes) {
+                    for (const n of graph._nodes) {
+                        if (n.comfyClass === 'WaveSpeedAIPredictor') {
+                            n._userSaving = true;
                         }
-                        node.wavespeedState.parameterValues[paramName] = paramValue;
                     }
                 }
-
-                updateRequestJson(node);
-            } catch (error) {
-                console.error('[WaveSpeed] Error restoring parameter values:', error);
             }
-        }
-
-        console.log('[WaveSpeed] Workflow data restored successfully');
-        delete node._wavespeed_savedData;
-
-    } catch (error) {
-        console.error('[WaveSpeed] Error restoring workflow data:', error);
-        delete node._wavespeed_savedData;
-    }
-}
-
-// Serialize node state
-export function serializeNodeState(node) {
-    const data = {};
-
-    // Save WaveSpeed state (only save necessary user state)
-    data.wavespeed = {
-        modelId: node.wavespeedState?.modelId || "",
-        apiPath: node.wavespeedState?.apiPath || "",
-        category: node.wavespeedState?.category || "",
-        arrayInputCounts: node._arrayInputCounts || {}
-    };
-
-    // Save current request_json value for parameter restoration
-    if (node.requestJsonWidget) {
-        data.wavespeed.requestJsonValue = node.requestJsonWidget.value;
+        }, true);
     }
 
-    console.log('[WaveSpeed] Serializing state:', data.wavespeed);
-    return data;
-}
-
-// Configure node to support workflow restore
-export function configureWorkflowSupport(node) {
-    // Override configure method to support workflow restore
+    // Override configure method to restore state
     const originalConfigure = node.configure;
     node.configure = function(data) {
+        // Call original configure first to let ComfyUI restore basic structure
         if (originalConfigure) {
             originalConfigure.call(this, data);
         }
 
-        // Store workflow data for restoration
-        if (data.wavespeed) {
-            this._wavespeed_savedData = data.wavespeed;
-            console.log('[WaveSpeed] Saved workflow data for restoration:', {
-                modelId: data.wavespeed.modelId,
-                arrayInputCounts: data.wavespeed.arrayInputCounts
-            });
+        // Restore our custom metadata and link info
+        if (data.wavespeed && data.wavespeed.savedInputs) {
 
-            // Create inputs immediately to prevent connection loss
-            const arrayInputCounts = data.wavespeed.arrayInputCounts || {};
-            if (Object.keys(arrayInputCounts).length > 0) {
-                console.log('[WaveSpeed] Creating inputs immediately in configure()');
+            // Match saved input metadata with actual inputs created by ComfyUI
+            for (const savedInput of data.wavespeed.savedInputs) {
+                // Find the corresponding input by name
+                const input = this.inputs?.find(inp => inp.name === savedInput.name);
+                if (input) {
+                    // Restore custom flags
+                    input._wavespeed_dynamic = true;
+                    input._wavespeed_param = savedInput.name;
 
-                // Clear existing inputs (except Client)
-                this.inputs = this.inputs?.filter(inp => inp.name === 'Client') || [];
+                    // Restore link if it was saved
+                    if (savedInput.link != null) {
+                        input.link = savedInput.link;
+                    }
 
-                // Create array inputs based on saved counts
-                for (const [arrayParamName, count] of Object.entries(arrayInputCounts)) {
-                    const singularName = arrayParamName.endsWith('s')
-                        ? arrayParamName.slice(0, -1)
-                        : arrayParamName;
-
-                    console.log(`[WaveSpeed] Creating ${count} inputs for "${arrayParamName}"`);
-
-                    for (let i = 1; i <= count; i++) {
-                        const slotName = `${singularName}_${i}`;
-                        this.addInput(slotName, '*');
+                    // Restore array metadata
+                    if (savedInput.isExpandedArrayItem) {
+                        input._wavespeed_expanded_array_item = true;
+                        input._wavespeed_parent_array = savedInput.parentArray;
+                        input._wavespeed_array_index = savedInput.arrayIndex;
                     }
                 }
+            }
 
-                console.log('[WaveSpeed] Inputs created in configure(), count:', this.inputs?.length);
+            // Mark as restoring to preserve inputs in initializePredictorWidgets
+            this._isRestoring = true;
+
+            // Temporarily remove input.widget to prevent onGraphConfigured from deleting inputs
+            // Save widget references and remove them before onGraphConfigured executes
+            if (this.inputs) {
+                for (const input of this.inputs) {
+                    if (input._wavespeed_dynamic && input.widget) {
+                        // Save widget reference for later restoration
+                        input._savedWidget = input.widget;
+                        // Remove widget to prevent onGraphConfigured from deleting this input
+                        delete input.widget;
+                    }
+                }
             }
         }
+
+        // Store workflow data for restore
+        if (data.wavespeed) {
+            this._wavespeed_savedData = data.wavespeed;
+
+            // Pre-initialize wavespeedState to prevent early serialize from saving empty data
+            if (!this.wavespeedState) {
+                this.wavespeedState = {
+                    modelId: "",
+                    apiPath: "",
+                    category: "",
+                    categoryList: [],
+                    modelList: [],
+                    parameters: [],
+                    parameterValues: {},
+                    isUpdatingCategory: false,
+                    isUpdatingModel: false,
+                    lastCategoryValue: "",
+                    lastModelValue: "",
+                    requestSequence: 0
+                };
+            }
+
+            // Restore state from JSON to wavespeedState
+            this.wavespeedState.modelId = data.wavespeed.modelId || "";
+            this.wavespeedState.apiPath = data.wavespeed.apiPath || "";
+            this.wavespeedState.category = data.wavespeed.category || "all";
+            this.wavespeedState.currentCategory = data.wavespeed.category || "all";
+
+            if (data.wavespeed.parameterValues && Object.keys(data.wavespeed.parameterValues).length > 0) {
+                this.wavespeedState.parameterValues = { ...data.wavespeed.parameterValues };
+            }
+        }
+
+        // Save snapshot of restored inputs for verification
+        if (this._isRestoring && this.inputs) {
+            this._restoredInputs = this.inputs.map(inp => ({
+                name: inp.name,
+                type: inp.type,
+                link: inp.link,
+                _wavespeed_dynamic: inp._wavespeed_dynamic,
+                _wavespeed_param: inp._wavespeed_param,
+                _wavespeed_expanded_array_item: inp._wavespeed_expanded_array_item,
+                _wavespeed_parent_array: inp._wavespeed_parent_array,
+                _wavespeed_array_index: inp._wavespeed_array_index
+            }));
+        }
+
     };
+
 
     // Override serialize method to save state
     const originalSerialize = node.serialize;
     node.serialize = function() {
+        // Check if inputs were modified during restoration
+        if (this._isRestoring && this._restoredInputs) {
+            const currentInputs = this.inputs?.length || 0;
+            const expectedInputs = this._restoredInputs.length;
+            const currentLinked = this.inputs?.filter(i => i.link != null).length || 0;
+            const expectedLinked = this._restoredInputs.filter(i => i.link != null).length;
+
+            if (currentInputs !== expectedInputs || currentLinked !== expectedLinked) {
+                // Try to restore from snapshot
+                if (this.inputs) {
+                    for (const savedInput of this._restoredInputs) {
+                        const existing = this.inputs.find(i => i.name === savedInput.name);
+                        if (existing) {
+                            if (savedInput.link != null && existing.link == null) {
+                                existing.link = savedInput.link;
+                            }
+                            existing._wavespeed_dynamic = savedInput._wavespeed_dynamic;
+                            existing._wavespeed_param = savedInput._wavespeed_param;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clean up stale links ONLY when user explicitly saves (Ctrl+S)
+        if (this._userSaving && this.graph && this.graph.links && this.inputs) {
+            // Build set of valid link IDs from current inputs
+            const validLinkIds = new Set();
+            for (const input of this.inputs) {
+                if (input.link != null) {
+                    validLinkIds.add(input.link);
+                }
+            }
+
+            // Find and remove stale links from graph.links
+            const linksToRemove = [];
+            for (const [linkId, link] of Object.entries(this.graph.links)) {
+                if (link && link.target_id === this.id) {
+                    if (!validLinkIds.has(parseInt(linkId))) {
+                        linksToRemove.push(parseInt(linkId));
+                    }
+                }
+            }
+
+            // Remove stale links using LiteGraph API
+            for (const linkId of linksToRemove) {
+                if (this.graph.removeLink) {
+                    this.graph.removeLink(linkId);
+                }
+            }
+
+            // Reset flag after cleanup
+            this._userSaving = false;
+        }
+
         const data = originalSerialize ? originalSerialize.call(this) : {};
-        const serializedData = serializeNodeState(this);
-        Object.assign(data, serializedData);
+
+        // Sync data.inputs with actual UI connection state
+        if (this.inputs && this.inputs.length > 0) {
+            // Ensure data.inputs exists
+            if (!data.inputs) {
+                data.inputs = [];
+            }
+
+            // Sync each input slot's connection state
+            for (let i = 0; i < this.inputs.length; i++) {
+                const input = this.inputs[i];
+
+                // Ensure data.inputs[i] exists
+                if (!data.inputs[i]) {
+                    data.inputs[i] = {
+                        name: input.name,
+                        type: input.type
+                    };
+                }
+
+                // Sync link with actual UI state
+                data.inputs[i].link = input.link != null ? input.link : null;
+
+                // Sync widget association
+                if (input.widget) {
+                    data.inputs[i].widget = { name: input.widget.name };
+                }
+            }
+        }
+
+        // Save WaveSpeed state
+        data.wavespeed = {
+            modelId: this.wavespeedState?.modelId || "",
+            apiPath: this.wavespeedState?.apiPath || "",
+            category: this.wavespeedState?.currentCategory || "all",
+            parameterValues: this.wavespeedState?.parameterValues || {},
+            requestJsonValue: this.requestJsonWidget?.value || "{}"
+        };
+
+        // Save input slot info for connection restore (including link info)
+        // If restoring and savedInputs exist, preserve original data
+        if (this._isRestoring && this._wavespeed_savedData?.savedInputs) {
+            // Use original savedInputs during restoration to avoid saving incomplete data
+            data.wavespeed.savedInputs = this._wavespeed_savedData.savedInputs;
+        } else if (this.inputs && this.inputs.length > 0) {
+            // Normal case: generate savedInputs from current inputs
+            data.wavespeed.savedInputs = this.inputs
+                .filter(inp => inp._wavespeed_dynamic)
+                .map(inp => ({
+                    name: inp.name,
+                    type: inp.type,
+                    link: inp.link != null ? inp.link : null,
+                    isExpandedArrayItem: inp._wavespeed_expanded_array_item,
+                    parentArray: inp._wavespeed_parent_array,
+                    arrayIndex: inp._wavespeed_array_index
+                }));
+        }
+
         return data;
     };
 }

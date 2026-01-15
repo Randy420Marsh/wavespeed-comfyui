@@ -25,8 +25,21 @@ export function configureConnectionHandlers(node) {
                     // Update size widget editability
                     updateSizeWidgetEditability(this, input._wavespeed_param);
                 } else {
-                    // Update widget editability based on connection state
-                    updateSingleMediaWidgetEditability(this, input.name);
+                    // Find the widget for this input
+                    const widget = this.widgets?.find(w => w._wavespeed_param === input.name);
+                    if (widget) {
+                        // Check widget type and call appropriate update function
+                        if (widget.uploadBtn || widget.previewContainer) {
+                            // Media widget
+                            updateSingleMediaWidgetEditability(this, input.name);
+                        } else if (widget._wavespeed_seed) {
+                            // Seed widget (has multiple controls)
+                            updateSeedWidgetEditability(this, input.name);
+                        } else if (widget.inputEl) {
+                            // General widget (COMBO, INT, FLOAT, BOOLEAN, TEXT, prompt)
+                            updateGeneralWidgetEditability(this, input.name);
+                        }
+                    }
                 }
             }
 
@@ -41,14 +54,26 @@ export function configureConnectionHandlers(node) {
     node.onConnectInput = function(inputIndex, outputType, outputSlot, outputNode, outputIndex) {
         const input = this.inputs?.[inputIndex];
 
-        // Check if this is a media parameter with value
+        console.log('[WaveSpeed] onConnectInput called:', {
+            inputIndex,
+            inputName: input?.name,
+            outputType,
+            hasInput: !!input,
+            isDynamic: input?._wavespeed_dynamic
+        });
+
+        // ONLY check for media parameters with value (not general parameters like seed/prompt)
+        // Media parameters should not be connected if they already have a file/URL value
         if (input && input._wavespeed_dynamic) {
             const widget = this.widgets?.find(w => w._wavespeed_param === input.name);
-            if (widget && widget.inputEl) {
+            // Check if this is a media widget (has uploadBtn or previewContainer)
+            const isMediaWidget = widget && (widget.uploadBtn || widget.previewContainer);
+            
+            if (isMediaWidget && widget.inputEl) {
                 const hasValue = widget.inputEl.value && widget.inputEl.value.trim() !== '';
                 if (hasValue) {
-                    // Prevent connection when input has value
-                    console.log('[WaveSpeed Predictor] Cannot connect: input has value');
+                    // Prevent connection when media input has value
+                    console.log('[WaveSpeed Predictor] Cannot connect media parameter: input has value');
                     return false;
                 }
             }
@@ -261,6 +286,116 @@ export function updateSingleMediaWidgetEditability(node, paramName) {
                 }
                 preview.style.cursor = 'pointer';
             });
+        }
+    }
+}
+
+// Update general widget editability (for non-media widgets like COMBO, INT, FLOAT, BOOLEAN, TEXT)
+export function updateGeneralWidgetEditability(node, paramName) {
+    const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
+    if (!widget) return;
+
+    const inputSlot = node.inputs?.find(inp => inp.name === paramName);
+    const hasConnection = inputSlot && inputSlot.link != null;
+
+    // Get the input element (could be select, input, checkbox, etc.)
+    const inputEl = widget.inputEl;
+    if (!inputEl) return;
+
+    if (hasConnection) {
+        // Has connection: disable editing
+        inputEl.disabled = true;
+        inputEl.style.opacity = '0.5';
+        inputEl.style.cursor = 'not-allowed';
+        
+        // Add visual indicator
+        if (inputEl.tagName === 'INPUT' || inputEl.tagName === 'TEXTAREA') {
+            inputEl.setAttribute('data-original-placeholder', inputEl.placeholder || '');
+            inputEl.placeholder = '[Connected]';
+        }
+    } else {
+        // No connection: enable editing
+        inputEl.disabled = false;
+        inputEl.style.opacity = '1';
+        
+        // Restore cursor based on element type
+        if (inputEl.tagName === 'SELECT') {
+            inputEl.style.cursor = 'pointer';
+        } else if (inputEl.tagName === 'INPUT' && inputEl.type === 'checkbox') {
+            inputEl.style.cursor = 'pointer';
+        } else {
+            inputEl.style.cursor = 'text';
+        }
+        
+        // Restore placeholder
+        if (inputEl.tagName === 'INPUT' || inputEl.tagName === 'TEXTAREA') {
+            const originalPlaceholder = inputEl.getAttribute('data-original-placeholder');
+            if (originalPlaceholder) {
+                inputEl.placeholder = originalPlaceholder;
+            }
+        }
+    }
+}
+
+// Update seed widget editability (seed has multiple controls: input, mode select, random button)
+export function updateSeedWidgetEditability(node, paramName) {
+    const widget = node.widgets?.find(w => w._wavespeed_param === paramName);
+    if (!widget || !widget._wavespeed_seed) return;
+
+    const inputSlot = node.inputs?.find(inp => inp.name === paramName);
+    const hasConnection = inputSlot && inputSlot.link != null;
+
+    // Get all seed controls
+    const seedInput = widget.inputEl || widget._seedInput;
+    const modeSelect = widget._modeSelect;
+    
+    // Find random button (it's a sibling of seedInput in the container)
+    let randomBtn = null;
+    if (seedInput && seedInput.parentElement) {
+        randomBtn = Array.from(seedInput.parentElement.children).find(el => 
+            el.tagName === 'BUTTON' && el.textContent.includes('🎲')
+        );
+    }
+
+    if (hasConnection) {
+        // Has connection: disable all controls
+        if (seedInput) {
+            seedInput.disabled = true;
+            seedInput.style.opacity = '0.5';
+            seedInput.style.cursor = 'not-allowed';
+            seedInput.setAttribute('data-original-placeholder', seedInput.placeholder || '');
+            seedInput.placeholder = '[Connected]';
+        }
+        if (modeSelect) {
+            modeSelect.disabled = true;
+            modeSelect.style.opacity = '0.5';
+            modeSelect.style.cursor = 'not-allowed';
+        }
+        if (randomBtn) {
+            randomBtn.disabled = true;
+            randomBtn.style.opacity = '0.5';
+            randomBtn.style.cursor = 'not-allowed';
+        }
+    } else {
+        // No connection: enable all controls
+        if (seedInput) {
+            seedInput.disabled = false;
+            seedInput.style.opacity = '1';
+            seedInput.style.cursor = 'text';
+            const originalPlaceholder = seedInput.getAttribute('data-original-placeholder');
+            if (originalPlaceholder) {
+                seedInput.placeholder = originalPlaceholder;
+            }
+        }
+        if (modeSelect) {
+            modeSelect.disabled = false;
+            modeSelect.style.opacity = '1';
+            modeSelect.style.cursor = 'pointer';
+        }
+        if (randomBtn) {
+            randomBtn.disabled = false;
+            randomBtn.style.opacity = '1';
+            randomBtn.style.cursor = 'pointer';
         }
     }
 }

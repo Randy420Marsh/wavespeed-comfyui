@@ -148,16 +148,28 @@ export function parseModelParameters(inputSchema) {
             param.step = prop.step || (prop.type === 'integer' ? 1 : 0.01);
         }
 
+        // Special handling for size parameters (type: string, but may have size constraints)
+        if (isSizeParameter(propName)) {
+            // Extract min/max from API, fallback to defaults (256-2048)
+            param.min = prop.minimum !== undefined ? prop.minimum : 256;
+            param.max = prop.maximum !== undefined ? prop.maximum : 2048;
+            console.log(`[WaveSpeed] Size parameter "${propName}": min=${param.min}, max=${param.max}, default=${param.default}, xHidden=${param.xHidden}`);
+        }
+
         // Extract maxItems info and detect object array (e.g., bbox_condition with height/length/width)
         if (prop.type === 'array' || isArrayParameter(propName, prop.type)) {
             const apiMaxItems = prop.maxItems || 5;
             param.maxItems = Math.min(apiMaxItems, 5);
             
             // Check if array items are objects (e.g., bbox_condition with height/length/width)
-            if (prop.items && prop.items.type === 'object' && prop.items.properties) {
+            // BUT: Force loras to always be string arrays (with input slots), never object arrays
+            const isLorasParam = propName.toLowerCase().includes('lora');
+            if (!isLorasParam && prop.items && prop.items.type === 'object' && prop.items.properties) {
                 param.isObjectArray = true;
                 param.objectProperties = Object.keys(prop.items.properties);
                 console.log(`[WaveSpeed] Object array parameter "${propName}": properties = ${param.objectProperties.join(', ')}`);
+            } else if (isLorasParam) {
+                console.log(`[WaveSpeed] Loras parameter "${propName}": forced to string array (with input slots)`);
             }
             
             console.log(`[WaveSpeed] Array parameter "${propName}": API maxItems = ${prop.maxItems}, Limited to = ${param.maxItems}`);
