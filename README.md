@@ -89,7 +89,7 @@ Restart ComfyUI after installation.
 
 <img src="examples/case1-text-to-image/case1.png" width="400">
 
-[� Download Workflow JSON](examples/case1-text-to-image/case1-t2i.json)
+[📥 Download Workflow JSON](examples/case1-text-to-image/case1-t2i.json)
 
 ---
 
@@ -113,10 +113,7 @@ Restart ComfyUI after installation.
 
 **Result:**
 
-<video width="600" controls>
-  <source src="examples/case2-text-to-video/case2.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+https://github.com/user-attachments/assets/c6f5383b-2b80-4166-b9ea-dcfe406884b6
 
 [📥 Download Workflow JSON](examples/case2-text-to-video/case2-t2v.json)
 
@@ -162,12 +159,7 @@ Restart ComfyUI after installation.
 
 **Result:**
 
-<video width="600" controls>
-  <source src="examples/case4-image-to-video/case4.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-
-[📥 Download Workflow JSON](examples/case4-image-to-video/case4-i2v.json)
+📹 **[Download Video](examples/case4-image-to-video/case4.mp4)** | [📥 Download Workflow JSON](examples/case4-image-to-video/case4-i2v.json)
 
 ---
 
@@ -189,12 +181,7 @@ Restart ComfyUI after installation.
 
 **Result:**
 
-<video width="600" controls>
-  <source src="examples/case5-video-to-video/case5.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-
-[📥 Download Workflow JSON](examples/case5-video-to-video/case5-v2v.json)
+📹 **[Download Video](examples/case5-video-to-video/case5.mp4)** | [📥 Download Workflow JSON](examples/case5-video-to-video/case5-v2v.json)
 
 ---
 
@@ -216,10 +203,7 @@ Restart ComfyUI after installation.
 
 **Result:**
 
-<audio controls>
-  <source src="examples/case6-text-to-audio/case6.mp3" type="audio/mpeg">
-  Your browser does not support the audio tag.
-</audio>
+[case6.mp3](https://github.com/user-attachments/files/24638715/case6.mp3)
 
 [📥 Download Workflow JSON](examples/case6-text-to-audio/case6-t2a.json)
 
@@ -332,10 +316,7 @@ Restart ComfyUI after installation.
 
 **Stage 3 Output (Image-to-Video):**
 
-<video width="600" controls>
-  <source src="examples/case8-complex-pipeline/case8.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+https://github.com/user-attachments/assets/10949f10-4010-4eed-a38e-159ec83dede0
 
 **Why This Matters:**
 - 🎯 **Zero Learning Curve** - Works exactly like native ComfyUI nodes
