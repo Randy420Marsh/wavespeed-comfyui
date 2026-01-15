@@ -342,7 +342,13 @@ class WaveSpeedAIPreview:
 
             # Convert to tensor: (frames, height, width, channels)
             frames_array = np.array(frames, dtype=np.float32) / 255.0
+            print(f"[WaveSpeed Preview] frames_array shape: {frames_array.shape}")
+            print(f"[WaveSpeed Preview] frames_array dtype: {frames_array.dtype}")
+            
             frames_tensor = torch.from_numpy(frames_array)
+            print(f"[WaveSpeed Preview] frames_tensor shape: {frames_tensor.shape}")
+            print(f"[WaveSpeed Preview] frames_tensor dtype: {frames_tensor.dtype}")
+            
             components = VideoComponents(
                 images=frames_tensor,
                 audio=None,

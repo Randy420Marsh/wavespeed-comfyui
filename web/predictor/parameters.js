@@ -151,9 +151,9 @@ export function parseModelParameters(inputSchema) {
         // Special handling for size parameters (type: string, but may have size constraints)
         // Only apply min/max for range-type size (not enum-type size)
         if (isSizeParameter(propName) && !param.options) {
-            // Extract min/max from API, fallback to defaults (256-2048)
+            // Extract min/max from API, fallback to defaults (256-1536)
             param.min = prop.minimum !== undefined ? prop.minimum : 256;
-            param.max = prop.maximum !== undefined ? prop.maximum : 2048;
+            param.max = prop.maximum !== undefined ? prop.maximum : 1536;
         }
 
         // Extract maxItems info and detect object array (e.g., bbox_condition with height/length/width)

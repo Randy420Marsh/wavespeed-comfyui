@@ -291,6 +291,36 @@ def is_tensor_or_image(value):
     """Check if value is a tensor or numpy array (image data)"""
     return torch.is_tensor(value) or isinstance(value, np.ndarray)
 
+def is_video_from_file(value):
+    """Check if value is a ComfyUI VideoFromFile object."""
+    # VideoFromFile is from comfy_api.latest._input_impl.video_types
+    return hasattr(value, '__class__') and value.__class__.__name__ == 'VideoFromFile'
+
+def video_from_file_to_path(video_obj):
+    """Extract file path from VideoFromFile object."""
+    # VideoFromFile has a get_stream_source() method that returns the file path or BytesIO
+    if hasattr(video_obj, 'get_stream_source'):
+        source = video_obj.get_stream_source()
+        # If it's a BytesIO object, we need to save it to a temp file
+        if hasattr(source, 'read'):  # BytesIO-like object
+            import tempfile
+            import os
+            # Create temp file with .mp4 extension
+            fd, temp_path = tempfile.mkstemp(suffix='.mp4')
+            try:
+                with os.fdopen(fd, 'wb') as f:
+                    source.seek(0)
+                    f.write(source.read())
+                return temp_path
+            except Exception as e:
+                os.close(fd)
+                raise e
+        else:
+            # It's a file path string
+            return source
+    else:
+        raise ValueError(f"VideoFromFile object does not have get_stream_source method")
+
 def is_audio_dict(value):
     """Check if value looks like a ComfyUI AUDIO dict."""
     return isinstance(value, dict) and "waveform" in value and "sample_rate" in value
@@ -820,11 +850,32 @@ class WaveSpeedAIPredictor:
 
             print(f"[WaveSpeed Predictor] Connected inputs: {list(kwargs.keys())}")
 
+            # Initialize WaveSpeed client (needed for file uploads in Step 1.5)
+            wavespeed_client = WaveSpeedClient(api_key)
+
             # Step 1.5: Process tensor inputs - upload connected tensors to get URLs
             # Directly check each kwarg for tensor data (covers image/video/audio)
             print(f"[WaveSpeed Predictor] Step 1.5: Checking for tensor inputs...")
 
             for param_name, param_value in list(kwargs.items()):
+                # Check for VideoFromFile objects (ComfyUI video input)
+                if is_video_from_file(param_value):
+                    print(f"[WaveSpeed Predictor] ✓ Found VideoFromFile for '{param_name}'")
+                    try:
+                        video_path = video_from_file_to_path(param_value)
+                        print(f"[WaveSpeed Predictor] ✓ Extracted video path: {video_path}")
+                        
+                        # Upload video file to WaveSpeed
+                        uploaded_url = wavespeed_client.upload_file_with_type(video_path, "video")
+                        kwargs[param_name] = uploaded_url
+                        request_json_dict[param_name] = uploaded_url
+                        print(f"[WaveSpeed Predictor] ✓ Video uploaded successfully: {uploaded_url}")
+                    except Exception as e:
+                        print(f"[WaveSpeed Predictor] ✗ Failed to upload video for '{param_name}': {e}")
+                        traceback.print_exc()
+                        raise ValueError(f"Failed to upload video for '{param_name}': {e}")
+                    continue
+
                 # Check for ComfyUI AUDIO dicts
                 if is_audio_dict(param_value):
                     print(f"[WaveSpeed Predictor] ✓ Found AUDIO dict for '{param_name}'")
@@ -1070,7 +1121,6 @@ class WaveSpeedAIPredictor:
             # Step 2: Submit task to API
             print(f"[WaveSpeed Predictor] Step 2: Submitting task to API")
 
-            wavespeed_client = WaveSpeedClient(api_key)
             dynamic_request = DynamicRequest(api_path, filtered_params)
 
             print(f"[WaveSpeed Predictor] Submitting to API path: {api_path}")
@@ -1082,7 +1132,7 @@ class WaveSpeedAIPredictor:
                 dynamic_request,
                 wait_for_completion=True,
                 polling_interval=5,
-                timeout=300
+                timeout=1800  # 30 minutes timeout for long-running tasks (video generation, etc.)
             )
 
             if not response:

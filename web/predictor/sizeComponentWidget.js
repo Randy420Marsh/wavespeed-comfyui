@@ -127,7 +127,7 @@ export function createRatioButtonsWidget(node, param, sharedState) {
     
     // Get min/max from param (should be passed from parent)
     const minSize = param.min !== undefined ? param.min : 256;
-    const maxSize = param.max !== undefined ? param.max : 2048;
+    const maxSize = param.max !== undefined ? param.max : 1536;
     rangeDisplay.textContent = `Range: ${minSize}-${maxSize}`;
     rangeDisplay.title = `Supported size range: ${minSize}px to ${maxSize}px`;
     
@@ -218,7 +218,7 @@ export function createSizeComponentWidget(node, param, sharedState) {
     input.type = 'number';
     input.value = param.default !== undefined && param.default !== null && param.default !== '' ? param.default : '';
     input.min = param.min || 256;
-    input.max = param.max || 2048;
+    input.max = param.max || 1536;
     input.step = 8;
     input.placeholder = 'Optional';  // Show it's optional
     input.style.flex = '1';
@@ -334,7 +334,7 @@ export function createSizeComponentWidget(node, param, sharedState) {
         }
         
         const minSize = param.min || 256;
-        const maxSize = param.max || 2048;
+        const maxSize = param.max || 1536;
         const originalVal = val;
         
         // Clamp to min/max
