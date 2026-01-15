@@ -65,6 +65,8 @@ Restart ComfyUI after installation.
 }
 ```
 
+> ⏱️ **First Load Notice**: The first time you add a WaveSpeed node, it may take more than 5 seconds to fetch the model list from the API. Subsequent loads will be much faster.
+
 ---
 
 ## 🎨 Usage Examples
@@ -145,7 +147,7 @@ https://github.com/user-attachments/assets/c6f5383b-2b80-4166-b9ea-dcfe406884b6
 
 ### Example 4: Image-to-Video Animation
 
-� **Animate Static Images**
+🎬 **Animate Static Images**
 
 **Use Case:** Bring static images to life with motion
 
@@ -165,7 +167,7 @@ https://github.com/user-attachments/assets/c6f5383b-2b80-4166-b9ea-dcfe406884b6
 
 ### Example 5: Video-to-Video Enhancement
 
-�️ **Enhance and Transform Videos**
+🎞️ **Enhance and Transform Videos**
 
 <img src="examples/case5-video-to-video/case5_v2v.png" width="600">
 
@@ -187,7 +189,7 @@ https://github.com/user-attachments/assets/c6f5383b-2b80-4166-b9ea-dcfe406884b6
 
 ### Example 6: Text-to-Audio Generation
 
-� **Generate Audio from Text**
+🎵 **Generate Audio from Text**
 
 <img src="examples/case6-text-to-audio/case6_t2a.png" width="600">
 
@@ -318,13 +320,6 @@ https://github.com/user-attachments/assets/c6f5383b-2b80-4166-b9ea-dcfe406884b6
 
 https://github.com/user-attachments/assets/10949f10-4010-4eed-a38e-159ec83dede0
 
-**Why This Matters:**
-- 🎯 **Zero Learning Curve** - Works exactly like native ComfyUI nodes
-- 🔄 **Reuse Existing Workflows** - Drop into any existing ComfyUI workflow
-- 🚀 **Build Complex Pipelines** - Combine multiple AI models effortlessly
-- 🌐 **Full Ecosystem Compatibility** - Works with all ComfyUI extensions
-- 🔗 **True Native Integration** - Not a wrapper, but a first-class ComfyUI citizen
-
 [📥 Download Workflow JSON](examples/case8-complex-pipeline/case8-combination.json)
 
 ---
@@ -433,27 +428,6 @@ The plugin intelligently detects output types and returns the appropriate format
 - Model selections preserved
 - Parameter values restored
 - Input connections maintained
-
----
-
-## 💡 Tips & Best Practices
-
-### Performance Optimization
-1. **Use Caching** - Models load faster after first use (first load: 5-10 seconds)
-2. **Batch Processing** - Process multiple prompts efficiently
-3. **Resolution Management** - Start with lower resolution for testing
-
-### Prompt Engineering
-1. **Be Specific** - Detailed prompts yield better results
-2. **Use Negative Prompts** - Exclude unwanted elements
-3. **Reference Styles** - Mention art styles or artists
-4. **Iterate** - Refine prompts based on results
-
-### Workflow Organization
-1. **Group Related Nodes** - Use ComfyUI groups
-2. **Label Connections** - Add notes for complex workflows
-3. **Save Presets** - Export successful workflows
-4. **Version Control** - Keep workflow history
 
 ---
 
@@ -571,9 +545,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 💬 Discord: [Join our community](https://discord.gg/wavespeed)
-- 📖 Docs: [WaveSpeed Documentation](https://wavespeed.ai/docs)
-- 🐛 Issues: [GitHub Issues](https://github.com/WaveSpeedAI/wavespeed-comfyui/issues)
+Need help? We're here for you:
+
+- 🌐 **Official Website**: [wavespeed.ai](https://wavespeed.ai) - Live chat support available
+- 💬 **Discord**: [Join our community](https://discord.gg/wavespeed)
+- 📖 **Documentation**: [WaveSpeed Docs](https://wavespeed.ai/docs)
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/WaveSpeedAI/wavespeed-comfyui/issues)
+
+Our support team is ready to assist you with any questions or issues.
 
 ---
 
