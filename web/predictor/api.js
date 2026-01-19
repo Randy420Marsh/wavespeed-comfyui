@@ -121,8 +121,12 @@ export async function fetchWaveSpeedAPI(endpoint) {
 }
 
 export async function getModelCategories() {
+    const startTime = performance.now();
     try {
+        console.log("[WaveSpeed API] Fetching categories...");
         const result = await fetchWaveSpeedAPI("/wavespeed/api/categories");
+        const elapsed = performance.now() - startTime;
+        console.log(`[WaveSpeed API] Categories fetched in ${elapsed.toFixed(0)}ms`);
         if (result && result.success && result.data) {
             return result.data;
         } else {
@@ -130,14 +134,19 @@ export async function getModelCategories() {
             return [];
         }
     } catch (error) {
-        console.error("[WaveSpeed] Failed to get categories:", error);
+        const elapsed = performance.now() - startTime;
+        console.error(`[WaveSpeed] Failed to get categories after ${elapsed.toFixed(0)}ms:`, error);
         return [];
     }
 }
 
 export async function getModelsByCategory(category) {
+    const startTime = performance.now();
     try {
+        console.log(`[WaveSpeed API] Fetching models for category: ${category}...`);
         const result = await fetchWaveSpeedAPI(`/wavespeed/api/models/${category}`);
+        const elapsed = performance.now() - startTime;
+        console.log(`[WaveSpeed API] Models for ${category} fetched in ${elapsed.toFixed(0)}ms`);
         if (result && result.success && result.data) {
             return result.data;
         } else {
@@ -145,7 +154,8 @@ export async function getModelsByCategory(category) {
             return [];
         }
     } catch (error) {
-        console.error("[WaveSpeed] Failed to get models:", error);
+        const elapsed = performance.now() - startTime;
+        console.error(`[WaveSpeed] Failed to get models for ${category} after ${elapsed.toFixed(0)}ms:`, error);
         return [];
     }
 }
@@ -207,16 +217,65 @@ export async function preloadAllModels(onProgress) {
     }
 
     SHARED_PRELOAD_PROMISE = (async () => {
+        const startTime = performance.now();
         try {
             // 1. Load all categories
+            console.log("[WaveSpeed Perf] Starting to load categories...");
+            const catStart = performance.now();
             const categories = await getCachedCategories();
+            const catTime = performance.now() - catStart;
+            console.log(`[WaveSpeed Perf] Categories loaded in ${catTime.toFixed(0)}ms (${categories.length} categories)`);
             if (onProgress) onProgress({ step: 'categories', current: categories.length, total: categories.length });
 
-            // 2. Load models for all categories
-            const allModelsPromises = categories.map(cat => getCachedModelsByCategory(cat.value));
+            // 2. Load models for all categories with progress tracking
+            console.log("[WaveSpeed Perf] Starting to load models for all categories...");
+            const modelsStart = performance.now();
+            let loadedCount = 0;
+            const totalCategories = categories.length;
+            
+            // Create promises with progress tracking (parallel loading)
+            const allModelsPromises = categories.map(async (cat) => {
+                try {
+                    const models = await getCachedModelsByCategory(cat.value);
+                    loadedCount++;
+                    
+                    // Update progress after each category completes
+                    const progress = Math.round((loadedCount / totalCategories) * 85) + 10; // 10% to 95%
+                    if (onProgress) {
+                        onProgress({ 
+                            step: 'models', 
+                            current: loadedCount, 
+                            total: totalCategories,
+                            percent: progress
+                        });
+                    }
+                    
+                    return models;
+                } catch (error) {
+                    console.error(`[WaveSpeed] Failed to load models for ${cat.value}:`, error);
+                    loadedCount++;
+                    
+                    // Still update progress even on error
+                    const progress = Math.round((loadedCount / totalCategories) * 85) + 10;
+                    if (onProgress) {
+                        onProgress({ 
+                            step: 'models', 
+                            current: loadedCount, 
+                            total: totalCategories,
+                            percent: progress
+                        });
+                    }
+                    
+                    return []; // Return empty array on error
+                }
+            });
+            
+            // Wait for all to complete (still parallel)
             const allModels = await Promise.all(allModelsPromises);
+            const modelsTime = performance.now() - modelsStart;
 
             const totalModels = allModels.reduce((sum, models) => sum + models.length, 0);
+            console.log(`[WaveSpeed Perf] All models loaded in ${modelsTime.toFixed(0)}ms (${totalModels} models)`);
             if (onProgress) onProgress({ step: 'models', current: totalModels, total: totalModels });
 
             // 3. Build global model list
@@ -230,6 +289,9 @@ export async function preloadAllModels(onProgress) {
                     });
                 });
             });
+
+            const totalTime = performance.now() - startTime;
+            console.log(`[WaveSpeed Perf] Total preload time: ${totalTime.toFixed(0)}ms (${(totalTime/1000).toFixed(1)}s)`);
 
             return {
                 categories,

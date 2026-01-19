@@ -6,7 +6,7 @@
  */
 
 import { app } from "../../../scripts/app.js";
-import { FuzzyModelSelector } from "./predictor/FuzzyModelSelector.js";
+import { FuzzyModelSelector, createLoadingProgress } from "./predictor/FuzzyModelSelector.js";
 import { updateRequestJson } from "./predictor/widgets.js";
 import { createSizeComponentWidget, createRatioButtonsWidget } from "./predictor/sizeComponentWidget.js";
 import { restoreInputConnections, configureWorkflowSupport } from "./predictor/workflow.js";
@@ -267,21 +267,27 @@ async function createBasicUI(node, apiModule, utilsModule) {
     try {
 
         // Preload model data
-        const preloadContainer = document.createElement('div');
-        preloadContainer.textContent = '⏳ Loading models (first time may take 5-10 seconds)...';
-        preloadContainer.style.padding = '10px';
-        preloadContainer.style.color = '#4a9eff';
-        preloadContainer.style.textAlign = 'center';
-
-        // Add as DOM widget
-        const preloadWidget = node.addDOMWidget('preload_indicator', 'div', preloadContainer, { serialize: false });
+        // Create loading progress indicator
+        const loadingProgress = createLoadingProgress();
+        const preloadWidget = node.addDOMWidget('preload_indicator', 'div', loadingProgress.container, { serialize: false });
 
         try {
+            const startTime = Date.now();
+            let categoriesCount = 0;
+            const totalEstimatedTime = 150000; // 150 seconds estimated
+
             const preloadData = await apiModule.preloadAllModels((progress) => {
                 if (progress.step === 'categories') {
-                    preloadContainer.textContent = `⏳ Loading categories (${progress.current})...`;
+                    categoriesCount = progress.current;
+                    loadingProgress.updateProgress(progress);
                 } else if (progress.step === 'models') {
-                    preloadContainer.textContent = `⏳ Loading ${progress.total} models (cached after first load)...`;
+                    const elapsed = Date.now() - startTime;
+                    const estimatedProgress = Math.min(95, 10 + (elapsed / totalEstimatedTime) * 85);
+                    loadingProgress.updateProgress({
+                        ...progress,
+                        categories: categoriesCount,
+                        percent: estimatedProgress
+                    });
                 }
             });
 
@@ -294,7 +300,7 @@ async function createBasicUI(node, apiModule, utilsModule) {
             }
         } catch (error) {
             console.error('[WaveSpeed Predictor] Preload failed:', error);
-            preloadContainer.textContent = '❌ Failed to load models';
+            loadingProgress.container.innerHTML = '<div style="color:#ff4444;padding:10px;">❌ Failed to load models</div>';
         }
 
         // Remove loading indicator - compatible with both Canvas and Vue rendering modes
@@ -314,19 +320,19 @@ async function createBasicUI(node, apiModule, utilsModule) {
         
         // DOM cleanup with fallbacks for both rendering modes
         // Immediate removal (works if already mounted)
-        if (preloadContainer.parentNode) {
-            preloadContainer.parentNode.removeChild(preloadContainer);
+        if (loadingProgress.container.parentNode) {
+            loadingProgress.container.parentNode.removeChild(loadingProgress.container);
         }
         
         // Delayed removal (handles async rendering in Canvas mode)
         setTimeout(() => {
-            if (preloadContainer.parentNode) {
-                preloadContainer.parentNode.removeChild(preloadContainer);
+            if (loadingProgress.container.parentNode) {
+                loadingProgress.container.parentNode.removeChild(loadingProgress.container);
             }
             // Also search for any orphaned preload indicators in the DOM
             const orphans = document.querySelectorAll('.wavespeed-loading-overlay, [class*="preload"]');
             orphans.forEach(el => {
-                if (el.textContent && el.textContent.includes('Loaded') && el.textContent.includes('models')) {
+                if (el.textContent && el.textContent.includes('Loading') && el.textContent.includes('models')) {
                     el.remove();
                 }
             });
@@ -334,8 +340,8 @@ async function createBasicUI(node, apiModule, utilsModule) {
         
         // Additional cleanup after next frame
         requestAnimationFrame(() => {
-            if (preloadContainer.parentNode) {
-                preloadContainer.parentNode.removeChild(preloadContainer);
+            if (loadingProgress.container.parentNode) {
+                loadingProgress.container.parentNode.removeChild(loadingProgress.container);
             }
         });
 

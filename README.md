@@ -6,7 +6,6 @@
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-brightgreen)](https://github.com/comfyanonymous/ComfyUI)
 [![WaveSpeed AI](https://img.shields.io/badge/WaveSpeed-AI-orange)](https://wavespeed.ai)
 
-**One Plugin, All Modalities** | Text→Image | Image→Image | Text→Video | Video→Video | Text→Audio | Image→3D
 
 </div>
 
@@ -48,12 +47,39 @@ Support for **20+ AI generation categories** including:
 
 ### Installation Steps
 
+**Step 1: Clone the plugin**
+
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/WaveSpeedAI/wavespeed-comfyui.git
 cd wavespeed-comfyui
-pip install -r requirements.txt
 ```
+
+**Step 2: Find ComfyUI's Python path**
+
+Start ComfyUI and check the console output for:
+```
+** Python executable: D:\Projects\ComfyUI\.venv\Scripts\python.exe
+```
+Copy that path.
+
+**Step 3: Install dependencies**
+
+Use the Python path from Step 2:
+
+```bash
+# Windows example:
+D:\Projects\ComfyUI\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Linux/Mac example:
+/home/user/ComfyUI/.venv/bin/python -m pip install -r requirements.txt
+```
+
+**Step 4: Restart ComfyUI**
+
+Close and restart ComfyUI. You should see WaveSpeed nodes available.
+
+> ⚠️ **Why this matters**: If you just run `pip install -r requirements.txt`, it might install to the wrong Python environment, causing `ModuleNotFoundError`.
 
 Restart ComfyUI after installation.
 
@@ -67,7 +93,7 @@ Restart ComfyUI after installation.
 }
 ```
 
-> ⏱️ **First Load Notice**: The first time you add a WaveSpeed node, it may take more than 5 seconds to fetch the model list from the API. Subsequent loads will be much faster.
+> ⏱️ **First Load Notice**: The first loading will fetch 600+ models from 25 categories. This takes approximately **2-4 minutes depending on your network**. Subsequent loads use cached data and are instant.
 
 ---
 

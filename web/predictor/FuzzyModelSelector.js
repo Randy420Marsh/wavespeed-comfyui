@@ -3,6 +3,89 @@
  * Fixed version: solve style and event issues in ComfyUI DOM widget
  */
 
+/**
+ * Create a loading progress indicator
+ */
+export function createLoadingProgress() {
+    const container = document.createElement('div');
+    container.style.padding = '20px';
+    container.style.textAlign = 'center';
+    container.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+
+    // Title
+    const title = document.createElement('div');
+    title.textContent = '⏳ Loading WaveSpeed Models';
+    title.style.fontSize = '14px';
+    title.style.fontWeight = '600';
+    title.style.color = '#4a9eff';
+    title.style.marginBottom = '12px';
+    container.appendChild(title);
+
+    // Status text
+    const statusText = document.createElement('div');
+    statusText.textContent = 'Initializing...';
+    statusText.style.fontSize = '12px';
+    statusText.style.color = '#888';
+    statusText.style.marginBottom = '8px';
+    container.appendChild(statusText);
+
+    // Progress bar container
+    const progressBarBg = document.createElement('div');
+    progressBarBg.style.width = '100%';
+    progressBarBg.style.height = '6px';
+    progressBarBg.style.backgroundColor = '#2a2a2a';
+    progressBarBg.style.borderRadius = '3px';
+    progressBarBg.style.overflow = 'hidden';
+    progressBarBg.style.marginBottom = '8px';
+
+    // Progress bar fill
+    const progressBarFill = document.createElement('div');
+    progressBarFill.style.width = '0%';
+    progressBarFill.style.height = '100%';
+    progressBarFill.style.backgroundColor = '#4a9eff';
+    progressBarFill.style.transition = 'width 0.3s ease';
+    progressBarBg.appendChild(progressBarFill);
+    container.appendChild(progressBarBg);
+
+    // Progress percentage
+    const progressPercent = document.createElement('div');
+    progressPercent.textContent = '0%';
+    progressPercent.style.fontSize = '11px';
+    progressPercent.style.color = '#666';
+    container.appendChild(progressPercent);
+
+    // Tip text
+    const tipText = document.createElement('div');
+    tipText.textContent = 'First load takes 2-4 minutes depending on your network. Subsequent loads are instant.';
+    tipText.style.fontSize = '11px';
+    tipText.style.color = '#888';
+    tipText.style.marginTop = '10px';
+    tipText.style.fontStyle = 'italic';
+    tipText.style.lineHeight = '1.4';
+    container.appendChild(tipText);
+
+    return {
+        container,
+        updateProgress: (progress) => {
+            if (progress.step === 'categories') {
+                statusText.textContent = `Loading categories (${progress.current})...`;
+                progressBarFill.style.width = '10%';
+                progressPercent.textContent = '10%';
+            } else if (progress.step === 'models') {
+                const percent = Math.min(95, progress.percent || 50);
+                statusText.textContent = `Loading from ${progress.total} categories...`;
+                progressBarFill.style.width = `${percent}%`;
+                progressPercent.textContent = `${Math.round(percent)}%`;
+            }
+        },
+        complete: () => {
+            statusText.textContent = 'Loading complete!';
+            progressBarFill.style.width = '100%';
+            progressPercent.textContent = '100%';
+        }
+    };
+}
+
 export class FuzzyModelSelector {
     constructor(onModelSelect) {
         this.onModelSelect = onModelSelect;
@@ -280,6 +363,30 @@ export class FuzzyModelSelector {
         return div.innerHTML;
     }
     
+    // Update item styles without re-rendering
+    updateItemStyles() {
+        const items = this.dropdown.querySelectorAll('.fuzzy-model-item');
+        items.forEach((item, index) => {
+            if (index === this.selectedIndex) {
+                item.classList.add('selected');
+                item.style.backgroundColor = '#4a9eff';
+                item.style.color = 'white';
+                const modelIdEl = item.querySelector('div:last-child');
+                if (modelIdEl) {
+                    modelIdEl.style.color = 'rgba(255,255,255,0.8)';
+                }
+            } else {
+                item.classList.remove('selected');
+                item.style.backgroundColor = 'transparent';
+                item.style.color = '#e0e0e0';
+                const modelIdEl = item.querySelector('div:last-child');
+                if (modelIdEl) {
+                    modelIdEl.style.color = '#888';
+                }
+            }
+        });
+    }
+    
     // Render dropdown
     renderDropdown() {
         this.dropdown.innerHTML = '';
@@ -305,6 +412,7 @@ export class FuzzyModelSelector {
             item.style.cursor = 'pointer';
             item.style.borderBottom = '1px solid #333';
             item.style.transition = 'background-color 0.1s ease';
+            item.style.pointerEvents = 'auto'; // Ensure pointer events work
             
             if (index === this.selectedIndex) {
                 item.classList.add('selected');
@@ -321,6 +429,7 @@ export class FuzzyModelSelector {
             displayName.style.fontSize = '13px';
             displayName.style.marginBottom = '2px';
             displayName.style.lineHeight = '1.3';
+            displayName.style.pointerEvents = 'none'; // Let parent handle clicks
             displayName.innerHTML = this.highlightMatches(model.displayName || '', this.searchQuery);
             
             // Model ID
@@ -328,6 +437,7 @@ export class FuzzyModelSelector {
             modelId.style.fontSize = '11px';
             modelId.style.color = index === this.selectedIndex ? 'rgba(255,255,255,0.8)' : '#888';
             modelId.style.fontFamily = 'monospace';
+            modelId.style.pointerEvents = 'none'; // Let parent handle clicks
             modelId.innerHTML = this.highlightMatches(model.modelId || '', this.searchQuery);
             
             item.appendChild(displayName);
@@ -340,10 +450,21 @@ export class FuzzyModelSelector {
                 this.selectModel(model);
             });
             
+            // Also try click event as backup
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.selectModel(model);
+            });
+            
             // Mouse hover highlight
             item.addEventListener('mouseenter', () => {
+                const oldIndex = this.selectedIndex;
                 this.selectedIndex = index;
-                this.renderDropdown();
+                // Don't re-render, just update styles
+                if (oldIndex !== index) {
+                    this.updateItemStyles();
+                }
             });
             
             this.dropdown.appendChild(item);
