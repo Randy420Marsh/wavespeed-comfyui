@@ -270,8 +270,36 @@ export async function preloadAllModels(onProgress) {
                 }
             });
             
-            // Wait for all to complete (still parallel)
-            const allModels = await Promise.all(allModelsPromises);
+            // Wait for all to complete (still parallel) with 5 minute timeout
+            let timeoutId;
+            const timeoutPromise = new Promise((resolve) => {
+                timeoutId = setTimeout(() => {
+                    console.error('[WaveSpeed] ⚠️ Loading timeout after 5 minutes, using partial data');
+                    resolve('TIMEOUT');
+                }, 5 * 60 * 1000);
+            });
+            
+            const raceResult = await Promise.race([
+                Promise.all(allModelsPromises),
+                timeoutPromise
+            ]);
+            
+            // Clear timeout if loading completed normally
+            if (raceResult !== 'TIMEOUT') {
+                clearTimeout(timeoutId);
+            }
+            
+            // If timeout, collect whatever data is available
+            let allModels;
+            if (raceResult === 'TIMEOUT') {
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 more second
+                allModels = await Promise.allSettled(allModelsPromises).then(results => 
+                    results.map(r => r.status === 'fulfilled' ? r.value : [])
+                );
+            } else {
+                allModels = raceResult;
+            }
+            
             const modelsTime = performance.now() - modelsStart;
 
             const totalModels = allModels.reduce((sum, models) => sum + models.length, 0);
