@@ -1,279 +1,614 @@
-# ComfyUI-WaveSpeedAI-API
+# 🚀 ComfyUI-WaveSpeed: Universal AI Generation Plugin
 
-This is a custom node for ComfyUI that allows you to use the WaveSpeed AI API directly in ComfyUI. WaveSpeed AI is a high-performance AI image and video generation service platform offering industry-leading generation speeds.
+<div align="center">
 
-**NEW: Dynamic Node Approach [WIP]** - We've introduced a streamlined workflow using dynamic nodes that replace the previous extensive collection of individual model nodes. You can now select models and configure parameters dynamically using **WaveSpeedAI Task Create [WIP] ➜ WaveSpeedAI Task Submit [WIP]** workflow for a more flexible and maintainable experience.
-
-For more information, see [WaveSpeed AI Documentation](https://wavespeed.ai/docs).
-
-## Requirements
-Before using this node, you need to have a WaveSpeed AI API key. You can obtain your API key from the [WaveSpeed AI](https://wavespeed.ai).
-
-## Installation
-
-### Installing manually
-
-1. Navigate to the `ComfyUI/custom_nodes` directory.
-
-2. Clone this repository: `git clone https://github.com/WaveSpeedAI/wavespeed-comfyui.git`
-  
-3. Install the dependencies:
-  - Windows (ComfyUI portable): `python -m pip install -r requirements.txt`
-  - Linux or MacOS: `pip install -r requirements.txt`
-4. If you don't want to expose your API key in the node, you can rename the `config.ini.tmp` file to `config.ini` and add your API key there.
-
-5. Start ComfyUI and enjoy using the WaveSpeed AI API node!
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-brightgreen)](https://github.com/comfyanonymous/ComfyUI)
+[![WaveSpeed AI](https://img.shields.io/badge/WaveSpeed-AI-orange)](https://wavespeed.ai)
 
 
-## How to Use
-
-The following are typical workflows and result demonstrations (each group includes a ComfyUI workflow screenshot).
-The workflow images contain workflow information and can be directly dragged into ComfyUI for use.
+</div>
 
 ---
 
-#### NEW: Dynamic Node Examples [WIP]
+## ✨ Features
 
-##### 1. Dynamic Nodes - Nano Banana
-- Workflow Example: [dynamic-nodes-nano-banana.json](examples/dynamic-nodes-nano-banana.json)
-- This example demonstrates the new dynamic node approach using nano banana model with WaveSpeedAI Task Create [WIP] ➜ WaveSpeedAI Task Submit [WIP] workflow.
+### 🎭 Multi-Modal Generation
+Support for **20+ AI generation categories** including:
+- **Text to Image** - Generate images from text prompts
+- **Image to Image** - Transform and edit existing images
+- **Text to Video** - Create videos from text descriptions
+- **Video to Video** - Transform and enhance videos
+- **Text to Audio** - Generate audio from text
+- **Image to 3D** - Convert images to 3D models
+- And more...
 
-##### 2. Dynamic Nodes - Seedream V4
-- Workflow Example: [dynamic-nodes-seedreamv4.json](examples/dynamic-nodes-seedreamv4.json)
-- This example shows how to use Seedream V4 model through the dynamic node system.
+### 🎯 Unified Interface
+- **Single Predictor Node** - Access 600+ AI models through one node
+- **Dynamic Parameters** - Model-specific parameters auto-configure
+- **Fuzzy Search** - Quickly find models by name or category
+- **Category Tabs** - Browse models by type
 
-##### 3. Dynamic Nodes - Seedream V4 Sequential
-- Workflow Example: [dynamic-nodes-seedreamv4-sequential.json](examples/dynamic-nodes-seedreamv4-sequential.json)
-- This example demonstrates sequential processing with Seedream V4 using the dynamic node workflow.
-
-##### 4. Dynamic Nodes - Qwen LoRA
-- Workflow Example: [dynamic-nodes-qwen-lora.json](examples/dynamic-nodes-qwen-lora.json)
-- This example demonstrates how to use the Qwen LoRA model with the dynamic node workflow.
-
-##### 5. Dynamic Nodes - Mixed Usage (Advanced)
-- Workflow Example: [dynamic-nodes-mixed-usage.json](examples/dynamic-nodes-mixed-usage.json)
-- This is an advanced example demonstrating a complete workflow that combines image-to-image and image-to-video generation.
-
-**Workflow Overview:**
-
-This example showcases a complete mixed workflow with two main tasks:
-
-**Task 1: Image to Image**
-- Model: `kwaivgi/kling-image-o1`
-- Purpose: Combine two reference images to generate a new image
-- Key Techniques:
-  - **Multi-Image Organization**: Use the `WaveSpeedAI Media Images To List` node to combine multiple image URLs into an array
-  - Workflow Steps:
-    1. Load local images using two `LoadImage` nodes
-    2. Upload images and get URLs using two `WaveSpeedAI Upload Image` nodes
-    3. Combine the two image URLs into a list using `WaveSpeedAI Media Images To List` node
-    4. Pass the image list to the `images` parameter in `WaveSpeedAI Task Create` node
-  - Prompt Example: `"The woman in Figure 2 is replaced with the robot from Figure 1, and the robot enters a berserk state"`
-
-**Task 2: Image to Video**
-- Model: `kwaivgi/kling-video-o1/image-to-video`
-- Purpose: Generate video using first frame and last frame
-- Key Techniques:
-  - **First/Last Frame Passing**:
-    - `image` parameter: Receives the first frame image URL (from the first uploaded image)
-    - `last_image` parameter: Receives the last frame image URL (from Task 1's generated result)
-  - Workflow Steps:
-    1. First Frame: Use the output from the first `WaveSpeedAI Upload Image` node
-    2. Last Frame: Use the `firstImageUrl` output from Task 1's `WaveSpeedAI Task Submit` node
-    3. Configure in `WaveSpeedAI Task Create` node:
-       - Connect `image` input to first frame URL
-       - Connect `last_image` input to last frame URL
-  - Prompt Example: `"The robot activates the temporal entry to the world of No. 1 Player and begins to transform"`
-
-**Core Node Usage:**
-
-1. **WaveSpeedAI Media Images To List**
-   - Purpose: Organize multiple individual image URLs into an array format
-   - Inputs: Up to 6 image URLs (`image_url_1` to `image_url_6`)
-   - Outputs:
-     - `firstImageUrl`: The URL of the first image
-     - `imageUrls`: JSON array string containing all image URLs
-   - Use Case: When a model needs to receive multiple reference images (e.g., image-to-image tasks)
-
-2. **First/Last Frame Passing Technique**
-   - Image-to-video models support passing both first and last frames simultaneously
-   - First Frame (`image`): Required parameter, defines the starting frame of the video
-   - Last Frame (`last_image`): Optional parameter, defines the ending frame of the video
-   - You can use the output image from a previous task as an input frame for the current task
-
-3. **Task Chaining**
-   - Build complex generation pipelines by connecting outputs and inputs of different task nodes
-   - This example demonstrates how to use the image-to-image result as the last frame input for image-to-video generation
-
-**Parameter Configuration Examples:**
-- Image-to-Image Task:
-  - `aspect_ratio`: "4:3"
-  - `resolution`: "1k"
-  - `num_images`: 1
-- Image-to-Video Task:
-  - `aspect_ratio`: "16:9"
-  - `duration`: 5 seconds
+### ⚡ Performance & UX
+- **Smart Caching** - Fast model loading after first use (first load: 5-10 seconds)
+- **Progress Indicators** - Real-time generation progress
+- **Workflow Support** - Save and restore complete workflows
+- **Connection Flexibility** - Connect any compatible input/output
 
 ---
 
-#### Hot
-- We have launched very powerful video nodes called seedance, please enjoy them freely
-- Workflow Example:
+## 📦 Installation
 
-  ![Seedance Workflow](examples/bytedance_seedance_lite_i2v.png)
+### Prerequisites
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) installed
+- [WaveSpeed AI API Key](https://wavespeed.ai) (free tier available)
 
-- Result Video:
-  
-https://github.com/user-attachments/assets/b9902503-f8b1-46b2-bc8e-48fcba84e5bc
+> 💡 **Built on**: ComfyUI v0.8.2 (Frontend v1.35.9)
+
+### Installation Steps
+
+**Step 1: Clone the plugin**
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/WaveSpeedAI/wavespeed-comfyui.git
+cd wavespeed-comfyui
+```
+
+**Step 2: Find ComfyUI's Python path**
+
+Start ComfyUI and check the console output for:
+```
+** Python executable: D:\Projects\ComfyUI\.venv\Scripts\python.exe
+```
+Copy that path.
+
+**Step 3: Install dependencies**
+
+Use the Python path from Step 2:
+
+```bash
+# Windows example:
+D:\Projects\ComfyUI\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Linux/Mac example:
+/home/user/ComfyUI/.venv/bin/python -m pip install -r requirements.txt
+```
+
+**Step 4: Restart ComfyUI**
+
+Close and restart ComfyUI. You should see WaveSpeed nodes available.
+
+> ⚠️ **Why this matters**: If you just run `pip install -r requirements.txt`, it might install to the wrong Python environment, causing `ModuleNotFoundError`.
+
+Restart ComfyUI after installation.
+
+### Configuration
+1. Get your API key from [WaveSpeed AI](https://wavespeed.ai)
+2. In ComfyUI: `Settings` → `WaveSpeed` → Enter API Key
+3. Or create `config.json` in plugin directory:
+```json
+{
+  "api_key": "your_api_key_here"
+}
+```
+
+> ⏱️ **First Load Notice**: The first loading will fetch 600+ models from 25 categories. This takes approximately **2-4 minutes depending on your network**. Subsequent loads use cached data and are instant.
 
 ---
 
-#### 1. Dia TTS
-- Workflow Example:
+## 🎨 Usage Examples
 
-  ![Dia TTS Workflow](examples/dia_tts.png)
+### Example 1: Text-to-Image Generation
 
----
+📸 **High-Quality Image Generation**
 
-#### 2. Flux Control LoRA Canny
-- Workflow Example:
+<img src="examples/case1-text-to-image/case1_t2i.png" width="600">
 
-  ![Flux Control LoRA Canny Workflow](examples/flux_control_lora_canny.png)
+**Use Case:** Generate professional-quality images from text descriptions
 
----
+**Models:** Flux Dev, SDXL, Ghibli Style, etc.
 
-#### 3. Flux Dev Lora Ultra Fast 
-- Workflow Example:
+**Key Features:**
+- Multiple aspect ratios (1:1, 16:9, 9:16, etc.)
+- Resolution control (512px - 2048px)
+- Seed control for reproducibility
+- Negative prompts support
 
-  ![Flux Dev Lora Ultra Fast Workflow](examples/flux_dev_lora_ultra_fast.png)
+**Result:**
 
----
+<img src="examples/case1-text-to-image/case1.png" width="400">
 
-#### 4. Hunyuan Custom Ref2V 720p Workflow and Result
-- Workflow Example:
-
-  ![Hunyuan Custom Ref2V 720p Workflow](examples/hunyuan_custom_ref2v_720p.png)
-
-- Result Video:
-  
-https://github.com/user-attachments/assets/46220376-4341-4ce3-a7f4-46f12ff7ccf6
+[📥 Download Workflow JSON](examples/case1-text-to-image/case1-t2i.json)
 
 ---
 
-#### 5. Wan2.1 I2V 720p Ultra Fast Workflow and Result
-- Workflow Example:
+### Example 2: Text-to-Video Generation
 
-  ![Wan2.1 I2V 720p Ultra Fast Workflow](examples/wan_2_1_i2v_720p_ultra_fast.png)
+🎬 **Create Videos from Text**
 
-- Result Video:
+<img src="examples/case2-text-to-video/case2_t2v.png" width="600">
 
-https://github.com/user-attachments/assets/77fc1882-6d74-43b0-a4eb-6d8883febcdc
+**Use Case:** Generate short videos from text prompts
+
+**Models:** Kling v1.6, Minimax Video, Wan2.1, etc.
+
+**Key Features:**
+- Duration control (2-10 seconds)
+- Resolution options (480p, 720p, 1080p)
+- Camera movement control
+- Audio generation option
+
+**Note:** Video generation may take several minutes. The plugin supports up to 30-minute timeout for long-running tasks.
+
+**Result:**
+
+https://github.com/user-attachments/assets/c6f5383b-2b80-4166-b9ea-dcfe406884b6
+
+[📥 Download Workflow JSON](examples/case2-text-to-video/case2-t2v.json)
 
 ---
 
+### Example 3: Image-to-Image Transformation
 
-### New Recommended Approach: Dynamic Parameter Nodes [WIP]
+🎨 **Transform and Edit Images**
 
-We now recommend using our new dynamic node system for a cleaner and more flexible workflow:
+<img src="examples/case3-image-to-image/case3_i2i.png" width="600">
 
-#### Core Dynamic Nodes:
-* **WaveSpeedAI Task Create [WIP]** - Select any available model and configure parameters dynamically
-* **WaveSpeedAI Task Submit [WIP]** - Execute your configured task
-* **WaveSpeedAI Client** - Client configuration (still required)
+**Use Case:** Transform existing images with AI
 
-#### Workflow Benefits:
-- **Dynamic Model Selection**: Choose from all available models within a single node interface
-- **Dynamic Parameters**: Configure model-specific parameters without needing individual nodes
-- **Simplified Setup**: Cleaner workflows with fewer node types
-- **Future-Proof**: New models are automatically available without requiring new node releases
+**Models:** Flux Redux, Instant Character, Step1X Edit, etc.
 
-#### How to Use:
-1. Add **WaveSpeedAI Task Create [WIP]** to your workflow
-2. Select your desired model from the dropdown (Flux, Hunyuan, Wan2.1, etc.)
-3. Configure the dynamic parameters based on your selected model
-4. Connect to **WaveSpeedAI Task Submit [WIP]** to execute
+**Key Features:**
+- Style transfer
+- Image editing with prompts
+- Reference image support
+- Strength control
 
-#### Legacy Individual Model Nodes:
-While we still support the individual model nodes listed below, we recommend migrating to the dynamic approach for new workflows. If you encounter any issues with the new dynamic nodes, please submit an issue.
+**Result:**
+
+<img src="examples/case3-image-to-image/case3.png" width="400">
+
+[📥 Download Workflow JSON](examples/case3-image-to-image/case3-i2i.json)
+
+---
+
+### Example 4: Image-to-Video Animation
+
+🎬 **Animate Static Images**
+
+<img src="examples/case4-image-to-video/case4_i2v.png" width="600">
+
+**Use Case:** Bring static images to life with motion
+
+**Models:** Stable Video Diffusion, I2VGen-XL, etc.
+
+**Key Features:**
+- Motion generation from single image
+- Camera movement control
+- Duration control
+- Smooth animation
+
+**Result:**
+
+📹 **[Download Video](examples/case4-image-to-video/case4.mp4)** | [📥 Download Workflow JSON](examples/case4-image-to-video/case4-i2v.json)
+
+---
+
+### Example 5: Video-to-Video Enhancement
+
+🎞️ **Enhance and Transform Videos**
+
+<img src="examples/case5-video-to-video/case5_v2v.png" width="600">
+
+**Use Case:** Upscale, stylize, or transform videos
+
+**Models:** Seedance v1.5, Real-ESRGAN, etc.
+
+**Key Features:**
+- Video upscaling (2x, 4x)
+- Style transformation
+- Motion preservation
+- Frame interpolation
+
+**Result:**
+
+📹 **[Download Video](examples/case5-video-to-video/case5.mp4)** | [📥 Download Workflow JSON](examples/case5-video-to-video/case5-v2v.json)
+
+---
+
+### Example 6: Text-to-Audio Generation
+
+🎵 **Generate Audio from Text**
+
+<img src="examples/case6-text-to-audio/case6_t2a.png" width="600">
+
+**Use Case:** Generate music, sound effects, or voice from text
+
+**Models:** Dia TTS, MMAudio V2, etc.
+
+**Key Features:**
+- Voice synthesis
+- Music generation
+- Sound effect creation
+- Multiple voice options
+
+**Result:**
+
+[case6.mp3](https://github.com/user-attachments/files/24638715/case6.mp3)
+
+[📥 Download Workflow JSON](examples/case6-text-to-audio/case6-t2a.json)
+
+---
+
+### Example 7: Image-to-3D Model
+
+🎲 **Convert Images to 3D**
+
+<img src="examples/case7-image-to-3d/case7_i23D.png" width="600">
+
+**Use Case:** Generate 3D models from 2D images
+
+**Models:** Hunyuan 3D V2, etc.
+
+**Key Features:**
+- Multi-view generation
+- GLB format export
+- Texture mapping
+- Mesh optimization
+
+**Result:**
+
+[📦 Download 3D Model (.glb)](examples/case7-image-to-3d/case7.glb) | [📥 Download Workflow JSON](examples/case7-image-to-3d/case7-i23D.json)
+
+---
+
+### Example 8: Complex Multi-Stage Pipeline
+
+🔗 **Advanced ComfyUI Integration**
+
+<img src="examples/case8-complex-pipeline/case8_combination.png" width="600">
+
+**Use Case:** Demonstrate seamless integration with ComfyUI native nodes and complex multi-stage pipelines
+
+**Workflow Highlights:**
+- **Multiple WaveSpeed Nodes** - Chain multiple AI generation steps (T2I → I2I → I2V)
+- **Native Node Integration** - Mix with ComfyUI's Load Image, Save Image, Preview Image nodes
+- **Flexible Data Flow** - Pass IMAGE/VIDEO tensors between nodes seamlessly
+- **Real-world Pipeline** - Text→Image → Image Enhancement → Image→Video
+
+**Pipeline Stages:**
+
+1. **Stage 1: Text-to-Image (WaveSpeed Predictor #1)**
+   - Generate base image from text prompt
+   - Model: Text-to-Image model (e.g., FLUX)
+   - Output: ComfyUI IMAGE tensor
+   - **Native Integration**: Output connects directly to ComfyUI Preview Image node
+
+2. **Stage 2: Image-to-Image Enhancement (WaveSpeed Predictor #2)**
+   - Enhance and refine the generated image
+   - Model: Image-to-Image model (e.g., Flux Redux)
+   - Input: IMAGE tensor from Stage 1 (via native ComfyUI connection)
+   - Output: Enhanced IMAGE tensor
+   - **Native Integration**: Seamlessly receives IMAGE from previous WaveSpeed node
+
+3. **Stage 3: Image-to-Video Animation (WaveSpeed Predictor #3)**
+   - Animate the enhanced image into video
+   - Model: Image-to-Video model (e.g., Stable Video Diffusion)
+   - Input: Enhanced IMAGE tensor from Stage 2
+   - Output: VIDEO URL
+   - **Native Integration**: Works with ComfyUI's video preview nodes
+
+4. **Stage 4: Preview & Save (Native ComfyUI Nodes)**
+   - Use ComfyUI's Preview Image nodes to view intermediate results
+   - Use Save Image nodes to export final outputs
+   - All connections work exactly like native ComfyUI nodes
+
+**Key Integration Features:**
+
+✅ **Tensor Compatibility**
+   - WaveSpeed nodes accept ComfyUI IMAGE/VIDEO/AUDIO tensors directly
+   - No manual conversion needed - just connect and run
+   - Works with any image/video processing node in ComfyUI ecosystem
+
+✅ **Output Flexibility**
+   - Outputs can connect to any compatible node
+   - Support for Preview Image, Save Image, Video Preview, etc.
+   - Chain multiple WaveSpeed nodes together seamlessly
+
+✅ **Workflow Persistence**
+   - All connections saved in workflow JSON
+   - Model selections preserved across sessions
+   - Parameter values restored on load
+   - Full workflow portability
+
+✅ **Native ComfyUI Features**
+   - Works with node groups and reroute nodes
+   - Compatible with workflow templates
+   - Supports ComfyUI's execution queue
+   - Full undo/redo support
+   - Drag-and-drop connections
+
+**Results:**
+
+**Stage 1 & 2 Outputs (Text-to-Image → Image-to-Image):**
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="examples/case8-complex-pipeline/case8_1.jpeg" width="400"><br>
+      <em>Stage 1: Generated Image</em>
+    </td>
+    <td align="center">
+      <img src="examples/case8-complex-pipeline/case8_2.jpeg" width="400"><br>
+      <em>Stage 2: Enhanced Image</em>
+    </td>
+  </tr>
+</table>
+
+**Stage 3 Output (Image-to-Video):**
+
+https://github.com/user-attachments/assets/10949f10-4010-4eed-a38e-159ec83dede0
+
+[📥 Download Workflow JSON](examples/case8-complex-pipeline/case8-combination.json)
+
+---
+
+## 🔧 Core Nodes
+
+### WaveSpeedAI Predictor ⚡
+
+**Input:**
+- **Dynamic parameters** - Auto-generated based on selected model
+  - Common parameters: `prompt`, `negative_prompt`, `seed`, `resolution`, etc.
+  - Media inputs: `image`, `video`, `audio` (accepts ComfyUI IMAGE/VIDEO/AUDIO tensors or URLs)
+  - All parameters can be set via UI widgets or connected from other nodes
+
+**Output:**
+- `output` (ANY) - URL string or list of URLs:
+  - Single output → URL string (e.g., `"https://cdn.wavespeed.ai/image.png"`)
+  - Multiple outputs → List of URLs (e.g., `["url1", "url2"]`)
+  - 3D model tasks → List containing preview images + 3D model URL
+
+**Note:** Output is URL format, not tensor. Use WaveSpeedAI Preview node to convert to IMAGE/VIDEO tensors for further processing.
+
+---
+
+### WaveSpeedAI Preview 👁️
+
+**Input:**
+- `input_url` (ANY) - Accepts URL string, list of URLs, or text content from WaveSpeed Predictor
+
+**Output:**
+- `image` (IMAGE) - ComfyUI IMAGE tensor (if input is image URL)
+- `video` (VIDEO) - ComfyUI VIDEO tensor (if input is video URL)
+
+**Note:** Automatically detects input type and converts URLs to tensors. For 3D model tasks, only displays preview without tensor conversion.
+
+---
+
+## 📚 Advanced Features
+
+### Dynamic Parameter System
+
+The plugin automatically generates input fields based on each model's schema. Parameters can be:
+- Set via UI widgets (text fields, dropdowns, sliders)
+- Connected from other nodes (images, videos, audio, numbers, text)
+- Mixed (UI defaults + node connections)
+
+### Array Parameters
+
+For models that accept multiple inputs (e.g., multiple reference images):
+
+**Example: Multiple Reference Images**
+```
+image_0 → First reference
+image_1 → Second reference
+image_2 → Third reference
+```
+
+The plugin automatically:
+- Expands array parameters to individual inputs
+- Limits to API-defined maxItems (typically 5)
+- Merges back to array format for API submission
+
+### Size Parameter Handling
+
+The plugin intelligently handles size parameters:
+
+**Enum Size (Dropdown):**
+- Models like Seedance provide fixed size options
+- Example: "auto", "1024*1024", "1024*1536"
+- UI shows dropdown selector
+
+**Range Size (Width/Height):**
+- Models like Flux allow custom dimensions
+- UI shows separate width/height inputs
+- Ratio buttons for quick selection (1:1, 16:9, 9:16, etc.)
+- Each component can be connected independently
+
+### Tensor Upload
+
+When you connect image/video/audio nodes, the plugin automatically:
+1. Detects the data type (image/video/audio)
+2. Converts to appropriate format (PNG/MP4/WAV)
+3. Uploads to WaveSpeed CDN
+4. Passes the URL to the API
+
+**Supported input types:**
+- ComfyUI IMAGE tensors
+- ComfyUI VIDEO tensors
+- ComfyUI AUDIO dicts
+- VHS_AUDIO callables
+- VideoFromFile objects
+
+### Smart Output Detection
+
+The plugin intelligently detects output types and returns the appropriate format:
+- **Images**: URL or tensor (for further processing)
+- **Videos**: URL (for preview or download)
+- **Audio**: URL (for playback)
+- **3D Models**: URL with .glb/.obj format (for 3D viewer)
+- **Text**: Plain text output
+
+### Workflow Save/Restore
+
+**Automatic Workflow Persistence:**
+- All node states saved in workflow JSON
+- Model selections preserved
+- Parameter values restored
+- Input connections maintained
+
+---
+
+## ❓ FAQ
 
 <details>
-<summary>Click to view legacy individual model nodes</summary>
+<summary><b>Q: How do I get an API key?</b></summary>
 
-### Legacy Nodes List (Still Supported):
-* "WaveSpeedAI Client"
-* "WaveSpeedAI Dia TTS"
-* "WaveSpeedAI Flux Control LoRA Canny"
-* "WaveSpeedAI Flux Control LoRA Depth"
-* "WaveSpeedAI Flux Dev"
-* "WaveSpeedAI Flux Dev Fill"
-* "WaveSpeedAI Flux Dev Lora"
-* "WaveSpeedAI Flux Dev Lora Ultra Fast"
-* "WaveSpeedAI Flux Dev Ultra Fast"
-* "WaveSpeedAI Flux Pro Redux"
-* "WaveSpeedAI Flux Redux Dev"
-* "WaveSpeedAI Flux Schnell"
-* "WaveSpeedAI Flux Schnell Lora"
-* "WaveSpeedAI Flux and SDXL Loras"
-* "WaveSpeedAI Framepack"
-* "WaveSpeedAI Ghibli"
-* "WaveSpeedAI Hidream E1 Full"
-* "WaveSpeedAI Hidream I1 Dev"
-* "WaveSpeedAI Hidream I1 Full"
-* "WaveSpeedAI Hunyuan 3D V2 Multi View"
-* "WaveSpeedAI Hunyuan Custom Ref2V 480p"
-* "WaveSpeedAI Hunyuan Custom Ref2V 720p"
-* "WaveSpeedAI Hunyuan Video I2V"
-* "WaveSpeedAI Hunyuan Video T2V"
-* "WaveSpeedAI Instant Character"
-* "WaveSpeedAI Kling v1.6 I2V Pro"
-* "WaveSpeedAI Kling v1.6 I2V Standard"
-* "WaveSpeedAI Kling v1.6 T2V Standard"
-* "WaveSpeedAI LTX Video I2V 480p"
-* "WaveSpeedAI LTX Video I2V 720p"
-* "WaveSpeedAI MMAudio V2"
-* "WaveSpeedAI Magi 1.24b"
-* "WaveSpeedAI Minimax Video 01"
-* "WaveSpeedAI Preview Video"
-* "WaveSpeedAI Real-ESRGAN"
-* "WaveSpeedAI SDXL"
-* "WaveSpeedAI SDXL Lora"
-* "WaveSpeedAI Save Audio"
-* "WaveSpeedAI SkyReels V1"
-* "WaveSpeedAI Step1X Edit"
-* "WaveSpeedAI Uno"
-* "WaveSpeedAI Upload Image"
-* "WaveSpeedAI Vidu Image to Video2.0"
-* "WaveSpeedAI Vidu Reference To Video2.0"
-* "WaveSpeedAI Vidu Start/End To Video2.0"
-* "WaveSpeedAI Wan Loras"
-* "WaveSpeedAI Wan2.1 I2V 480p"
-* "WaveSpeedAI Wan2.1 I2V 480p LoRA Ultra Fast"
-* "WaveSpeedAI Wan2.1 I2V 480p Lora"
-* "WaveSpeedAI Wan2.1 I2V 480p Ultra Fast"
-* "WaveSpeedAI Wan2.1 I2V 720p"
-* "WaveSpeedAI Wan2.1 I2V 720p LoRA Ultra Fast"
-* "WaveSpeedAI Wan2.1 I2V 720p Lora"
-* "WaveSpeedAI Wan2.1 I2V 720p Ultra Fast"
-* "WaveSpeedAI Wan2.1 T2V 480p LoRA"
-* "WaveSpeedAI Wan2.1 T2V 480p LoRA Ultra Fast"
-* "WaveSpeedAI Wan2.1 T2V 480p Ultra Fast"
-* "WaveSpeedAI Wan2.1 T2V 720p"
-* "WaveSpeedAI Wan2.1 T2V 720p LoRA"
-* "WaveSpeedAI Wan2.1 T2V 720p LoRA Ultra Fast"
-* "WaveSpeedAI Wan2.1 T2V 720p Ultra Fast"
+Visit [WaveSpeed AI](https://wavespeed.ai) and sign up. Free tier includes:
+- 100 credits per month
+- Access to all models
+- No credit card required
+</details>
 
+<details>
+<summary><b>Q: Why is the first load slow?</b></summary>
+
+The first load fetches the complete model list from WaveSpeed API (5-10 seconds). Subsequent loads use cached data and are much faster.
+</details>
+
+<details>
+<summary><b>Q: Why can't I find a specific model?</b></summary>
+
+1. Check if you're in the correct category tab
+2. Use the fuzzy search feature
+3. Model might be temporarily unavailable
+4. Check WaveSpeed AI dashboard for model status
+</details>
+
+<details>
+<summary><b>Q: How do I handle "Task timed out" errors?</b></summary>
+
+The default timeout is 30 minutes. For longer tasks:
+1. Check your network connection
+2. Try a different model
+3. Reduce output resolution/duration
+4. Contact support if issue persists
+</details>
+
+<details>
+<summary><b>Q: Can I use local LoRA files?</b></summary>
+
+No, but you can:
+1. Upload LoRA to Hugging Face
+2. Use the public URL in the plugin
+3. Or use WaveSpeed's built-in LoRA library
 </details>
 
 ---
 
-### How to Apply Lora
-1. As we provide services on WaveSpeedAI-API, you cannot use your local lora files. However, we support loading lora via URL.
-2. You can use "WaveSpeedAi Wan Loras", "WaveSpeedAi Flux Loras", or "WaveSpeedAi Flux SDXL Loras" nodes.
-3. Enter the lora URL in the lora_path field. For example: https://huggingface.co/WaveSpeedAi/WanLoras/resolve/main/wan_loras.safetensors
-4. Enter the lora weight in the lora_weight field. For example: 0.5
-5. If you have multiple loras, you can add additional lora_path and lora_weight pairs.
-6. If your model is not on Hugging Face, that's fine. Any publicly accessible URL will work.
+## 🛠️ Troubleshooting
 
-### How to Use image_url in Nodes
-1. You can use the "WaveSpeedAi Upload Image" node to convert a local IMAGE into an image_url.
-2. Connect the output to the corresponding node that requires it. You can find examples in the provided samples.
+### Common Issues
+
+**Issue: "No API key configured"**
+- Solution: Configure your API key using Settings → WaveSpeed
+- Verify key at [WaveSpeed Dashboard](https://wavespeed.ai/dashboard)
+
+**Issue: "Model list not loading"**
+- Solution: Check your internet connection and API key validity
+- First load may take 5-10 seconds
+- Check ComfyUI console for error messages
+
+**Issue: "Task timeout"**
+- Solution: Video generation can take up to 30 minutes
+- Check network connection
+- Try reducing output resolution/duration
+
+**Issue: "Upload failed"**
+- Solution: Check file size limits and format compatibility
+- Ensure your API key has sufficient credits
+
+**Issue: "VideoFromFile is not JSON serializable"**
+- Solution: Update to latest version (v2.0+)
+- This issue has been fixed in the new architecture
+
+**Issue: "Cannot find WaveSpeed nodes"**
+- Restart ComfyUI completely
+- Check `custom_nodes/wavespeed-comfyui` exists
+- Check console for error messages
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how you can help:
+
+### Report Issues
+- Use GitHub Issues
+- Include workflow JSON
+- Provide error messages
+- Describe expected vs actual behavior
+
+### Submit Pull Requests
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit PR with clear description
+
+### Improve Documentation
+- Fix typos
+- Add examples
+- Translate to other languages
+- Create video tutorials
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+
+---
+
+## 📞 Support
+
+Need help? We're here for you:
+
+- 🌐 **Official Website**: [wavespeed.ai](https://wavespeed.ai) - Live chat support available
+- 💬 **Discord**: [Join our community](https://discord.gg/wavespeed)
+- 📖 **Documentation**: [WaveSpeed Docs](https://wavespeed.ai/docs)
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/WaveSpeedAI/wavespeed-comfyui/issues)
+
+Our support team is ready to assist you with any questions or issues.
+
+---
+
+## 📊 Changelog
+
+### v2.0.0
+- Complete architecture redesign with unified Predictor node
+- Support for 20+ model categories and 600+ models
+- Dynamic parameter generation from model schemas
+- Fuzzy search and category filtering
+- Smart output detection and format conversion
+- Automatic tensor upload and conversion
+- Real-time progress tracking
+- Support for long-running tasks (30-minute timeout)
+- VideoFromFile support for video-to-video models
+- Size component widget for resolution parameters
+- Workflow save/restore functionality
+- Array parameter expansion (images, loras, etc.)
+- Object array support (bbox_condition, etc.)
+
+---
+
+<div align="center">
+
+**Made with ❤️ by the WaveSpeed Team**
+
+[⭐ Star us on GitHub](https://github.com/WaveSpeedAI/wavespeed-comfyui) | [🌐 Visit WaveSpeed.ai](https://wavespeed.ai)
+
+</div>

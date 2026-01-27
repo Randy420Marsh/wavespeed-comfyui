@@ -11,6 +11,35 @@ import aiohttp
 import asyncio
 import logging
 import time
+import io
+from .wavespeed_config import get_api_key_from_config, save_api_key, delete_api_key, has_api_key
+
+# Global API key storage (set by WaveSpeedClient node)
+_global_api_key = None
+
+def set_global_api_key(api_key):
+    """Set the global API key for uploads"""
+    global _global_api_key
+    _global_api_key = api_key
+    logging.info("[WaveSpeed] Global API key set")
+
+def get_global_api_key():
+    """Get the global API key"""
+    return _global_api_key
+
+def get_effective_api_key():
+    """
+    Get the effective API key with priority:
+    1. Runtime global key (from Client node)
+    2. Persistent config key (from settings)
+    3. Environment variable
+    """
+    # Priority 1: Runtime key from Client node
+    if _global_api_key:
+        return _global_api_key
+
+    # Priority 2 & 3: Config file or environment variable
+    return get_api_key_from_config()
 
 # Cache
 _cache = {
@@ -159,13 +188,17 @@ async def fetch_model_detail_from_api(model_id):
                 len(model_detail["api_schema"]["api_schemas"]) > 0 and
                 model_detail["api_schema"]["api_schemas"][0].get("request_schema")):
 
-                request_schema = model_detail["api_schema"]["api_schemas"][0]["request_schema"]
+                api_schema_item = model_detail["api_schema"]["api_schemas"][0]
+                request_schema = api_schema_item["request_schema"]
+                api_path = api_schema_item.get("api_path", f"/api/v3/{model_detail['model_uuid']}")
+
                 simplified_model_detail = {
                     "id": model_detail["id"],
                     "name": model_detail["name"],
                     "description": model_detail["description"],
                     "category": model_detail["category"],
                     "model_uuid": model_detail["model_uuid"],
+                    "api_path": api_path,
                     "input_schema": request_schema
                 }
                 
@@ -456,5 +489,230 @@ def map_json_schema_type_to_node_type(prop):
 def should_disable_parameter(prop):
     """Check if the parameter should be disabled/hidden"""
     return prop.get("disabled") is True or prop.get("hidden") is True
+
+@PromptServer.instance.routes.post("/wavespeed/api/upload")
+async def upload_file_or_tensor(request):
+    """
+    Upload file to WaveSpeed cloud server and return URL
+    Uses WaveSpeed's /api/v2/media/upload/binary endpoint
+    """
+    try:
+        # Get effective API key (runtime or persistent config)
+        api_key = get_effective_api_key()
+        if not api_key:
+            logging.error("[WaveSpeed Upload] No API key available. Please configure your API key in Settings.")
+            return web.json_response({
+                "success": False,
+                "error": "No API key configured. Please go to Settings → WaveSpeed and enter your API key."
+            })
+
+        # Parse the multipart form data
+        reader = await request.multipart()
+
+        upload_type = None
+        file_data = None
+        filename = None
+        content_type = None
+        url_value = None
+
+        # Read all parts from multipart
+        async for part in reader:
+            if part.name == 'type':
+                upload_type = await part.text()
+            elif part.name == 'url':
+                url_value = await part.text()
+            elif part.name == 'file':
+                filename = part.filename
+                content_type = part.headers.get('Content-Type', 'application/octet-stream')
+                file_data = await part.read()
+
+        logging.info(f"[WaveSpeed Upload] Received upload request: type={upload_type}, filename={filename}")
+
+        # Handle URL passthrough (no upload needed)
+        if upload_type == 'url' and url_value:
+            return web.json_response({
+                "success": True,
+                "data": {
+                    "url": url_value,
+                    "type": "url_passthrough"
+                }
+            })
+
+        # Handle file upload to WaveSpeed cloud
+        if upload_type in ['local_file', 'tensor'] and file_data:
+            import mimetypes
+
+            # Determine MIME type from filename or content-type
+            if not content_type or content_type == 'application/octet-stream':
+                if filename:
+                    guessed_type, _ = mimetypes.guess_type(filename)
+                    if guessed_type:
+                        content_type = guessed_type
+
+            # Upload to WaveSpeed cloud API (v3)
+            async with aiohttp.ClientSession() as session:
+                upload_url = "https://api.wavespeed.ai/api/v3/media/upload/binary"
+
+                # Create form data - match official example
+                form_data = aiohttp.FormData()
+                form_data.add_field('file',
+                                    file_data,
+                                    filename=filename or 'upload',
+                                    content_type=content_type)
+
+                headers = {
+                    'Authorization': f'Bearer {api_key}'
+                }
+
+                logging.info(f"[WaveSpeed Upload] Uploading {filename} ({len(file_data)} bytes) to {upload_url}")
+
+                async with session.post(
+                    upload_url,
+                    data=form_data,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=180)
+                ) as resp:
+                    response_text = await resp.text()
+                    logging.info(f"[WaveSpeed Upload] Response status: {resp.status}, body: {response_text[:200]}")
+
+                    if resp.status == 200:
+                        try:
+                            result = await resp.json()
+                            logging.info(f"[WaveSpeed Upload] Parsed response: {result}")
+
+                            # Response can be direct URL string or dict with various formats
+                            download_url = None
+                            if isinstance(result, str):
+                                download_url = result
+                            elif isinstance(result, dict):
+                                # Try different response formats
+                                download_url = (result.get('download_url') or
+                                              result.get('url') or
+                                              (result.get('data', {}).get('download_url') if isinstance(result.get('data'), dict) else None))
+
+                            if download_url:
+                                logging.info(f"[WaveSpeed Upload] Success: {download_url}")
+                                return web.json_response({
+                                    "success": True,
+                                    "data": {
+                                        "url": download_url,
+                                        "type": upload_type,
+                                        "filename": filename
+                                    }
+                                })
+                            else:
+                                logging.error(f"[WaveSpeed Upload] No URL in response: {result}")
+                                return web.json_response({
+                                    "success": False,
+                                    "error": f"No download URL in response"
+                                })
+                        except Exception as e:
+                            logging.error(f"[WaveSpeed Upload] Parse error: {e}, response: {response_text}")
+                            return web.json_response({
+                                "success": False,
+                                "error": f"Failed to parse response: {str(e)}"
+                            })
+                    else:
+                        logging.error(f"[WaveSpeed Upload] HTTP {resp.status}: {response_text}")
+                        return web.json_response({
+                            "success": False,
+                            "error": f"Upload failed: HTTP {resp.status}"
+                        })
+
+        return web.json_response({
+            "success": False,
+            "error": "Invalid upload request - missing file data"
+        })
+
+    except Exception as e:
+        logging.error(f"[WaveSpeed Upload] Error: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        })
+
+@PromptServer.instance.routes.post("/wavespeed/api/save_config")
+async def save_config_endpoint(request):
+    """
+    Save WaveSpeed configuration (API key)
+    """
+    try:
+        data = await request.json()
+        api_key = data.get('api_key', '').strip()
+
+        if not api_key:
+            return web.json_response({
+                "success": False,
+                "error": "API key is required"
+            })
+
+        # Save to config file
+        success = save_api_key(api_key)
+
+        if success:
+            logging.info("[WaveSpeed Config] API key saved via settings")
+            return web.json_response({
+                "success": True,
+                "message": "API key saved successfully"
+            })
+        else:
+            return web.json_response({
+                "success": False,
+                "error": "Failed to save API key"
+            })
+    except Exception as e:
+        logging.error(f"[WaveSpeed Config] Error saving config: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        })
+
+@PromptServer.instance.routes.get("/wavespeed/api/get_config")
+async def get_config_endpoint(request):
+    """
+    Get WaveSpeed configuration status (without exposing the actual key)
+    """
+    try:
+        has_key = has_api_key()
+
+        return web.json_response({
+            "success": True,
+            "data": {
+                "has_api_key": has_key,
+                "api_key_configured": has_key
+            }
+        })
+    except Exception as e:
+        logging.error(f"[WaveSpeed Config] Error getting config: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        })
+
+@PromptServer.instance.routes.post("/wavespeed/api/delete_config")
+async def delete_config_endpoint(request):
+    """
+    Delete WaveSpeed API key from configuration
+    """
+    try:
+        success = delete_api_key()
+
+        if success:
+            logging.info("[WaveSpeed Config] API key deleted via settings")
+            return web.json_response({
+                "success": True,
+                "message": "API key deleted successfully"
+            })
+        else:
+            return web.json_response({
+                "success": False,
+                "error": "Failed to delete API key"
+            })
+    except Exception as e:
+        logging.error(f"[WaveSpeed Config] Error deleting config: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        })
 
 logging.info("WaveSpeed AI API endpoints registered")
